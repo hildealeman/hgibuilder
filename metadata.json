@@ -1,0 +1,9 @@
+{
+  "name": "HGI - Vibe Builder",
+  "description": "Un entorno de Inteligencia Fundamentada en lo Humano para la creación ética de aplicaciones y debate en tiempo real.",
+  "requestFramePermissions": [
+    "microphone",
+    "camera",
+    "geolocation"
+  ]
+}
