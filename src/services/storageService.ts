@@ -1,6 +1,6 @@
 
 import { openDB, DBSchema, IDBPDatabase } from 'idb';
-import { Artifact } from '../types';
+import { Artifact } from '../../types';
 
 interface HGIDB extends DBSchema {
   artifacts: {

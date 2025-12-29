@@ -1,5 +1,5 @@
 
-import { GenerationConfig, ImageSize } from "../types";
+import { GenerationConfig, ImageSize } from "../../types";
 
 // Note: Direct import of GoogleGenAI removed to prevent client-side SDK usage for secrets.
 // We now fetch from /api/generate
