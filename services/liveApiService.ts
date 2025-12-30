@@ -83,8 +83,17 @@ export class LiveSession {
       ? `\n--- CÓDIGO ACTUAL DEL USUARIO ---\n${codeSnippet}\n---------------------------------\n` 
       : "\n--- NO HAY CÓDIGO GENERADO AÚN ---\n";
 
-    const chatContext = context.history.length > 0
-      ? `\n--- HISTORIAL DE CHAT RECIENTE ---\n${context.history.slice(-5).map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n')}\n----------------------------------\n`
+    const MAX_CHAT_TURNS = 25;
+    const recentHistory = context.history.slice(-MAX_CHAT_TURNS);
+
+    const chatContext = recentHistory.length > 0
+      ? `\n--- HISTORIAL DE CHAT RECIENTE (ULTIMOS ${MAX_CHAT_TURNS}) ---\n${recentHistory
+          .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
+          .join('\n')}\n----------------------------------\n`
+      : "";
+
+    const summary = recentHistory.length > 0
+      ? `\n--- RESUMEN RAPIDO (AUTO) ---\n- Ultimo objetivo del usuario: ${[...recentHistory].reverse().find(m => m.role === MessageRole.USER)?.content || 'N/A'}\n- Ultima respuesta del Arquitecto: ${[...recentHistory].reverse().find(m => m.role === MessageRole.MODEL)?.content || 'N/A'}\n--------------------------------\n`
       : "";
 
     // 2. Build Dynamic System Instruction
@@ -94,6 +103,7 @@ export class LiveSession {
       TU CONTEXTO ACTUAL:
       Tienes acceso total al código que el usuario está construyendo y al historial de chat.
       ${codeContext}
+      ${summary}
       ${chatContext}
 
       TU OBJETIVO:

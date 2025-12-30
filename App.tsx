@@ -35,6 +35,12 @@ function App() {
   const [dbProjectId, setDbProjectId] = useState<string | null>(null);
   const [dbSessionId, setDbSessionId] = useState<string | null>(null);
   const [dbLoading, setDbLoading] = useState(false);
+  const [dbProjects, setDbProjects] = useState<Array<{ id: string; title: string; updated_at: string | null }>>([]);
+  const [mobileSelectedProjectId, setMobileSelectedProjectId] = useState<string | null>(null);
+  const [mobileView, setMobileView] = useState<'gallery' | 'preview'>('gallery');
+  const [isLearningMode, setIsLearningMode] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [liveContextStale, setLiveContextStale] = useState(false);
 
   // State
   const [messages, setMessages] = useState<Message[]>([
@@ -99,6 +105,7 @@ function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastPersistedMessageId = useRef<string | null>(null);
   const artifactSaveTimer = useRef<number | null>(null);
+  const liveContextFingerprint = useRef<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -128,10 +135,131 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const mqlMobile = window.matchMedia('(max-width: 767px)');
+    const onChange = () => {
+      setIsMobile(mqlMobile.matches);
+      setIsLearningMode(mqlMobile.matches);
+    };
+
+    onChange();
+    mqlMobile.addEventListener('change', onChange);
+    return () => mqlMobile.removeEventListener('change', onChange);
+  }, []);
+
+  useEffect(() => {
+    if (isLearningMode && viewMode !== AppMode.PREVIEW) {
+      setViewMode(AppMode.PREVIEW);
+    }
+  }, [isLearningMode, viewMode]);
+
+  const loadProjectIntoState = async (ownerId: string, projectId: string) => {
+    setDbLoading(true);
+    try {
+      setDbProjectId(projectId);
+
+      const { data: existingSessions, error: sessionsErr } = await supabase
+        .from('hgibuilder_sessions')
+        .select(
+          'id,started_at,ended_at,current_artifact_title,current_artifact_version,current_artifact_code'
+        )
+        .eq('owner_id', ownerId)
+        .eq('project_id', projectId)
+        .order('started_at', { ascending: false })
+        .limit(1);
+
+      if (sessionsErr) throw sessionsErr;
+
+      let sessionId = existingSessions?.[0]?.id as string | undefined;
+
+      if (!sessionId) {
+        const { data: createdSession, error: createSessionErr } = await supabase
+          .from('hgibuilder_sessions')
+          .insert({
+            project_id: projectId,
+            owner_id: ownerId,
+            started_at: new Date().toISOString(),
+            current_artifact_title: currentArtifact.title,
+            current_artifact_version: currentArtifact.version,
+            current_artifact_code: currentArtifact.code,
+          })
+          .select(
+            'id,started_at,ended_at,current_artifact_title,current_artifact_version,current_artifact_code'
+          )
+          .single();
+
+        if (createSessionErr) throw createSessionErr;
+        sessionId = createdSession.id;
+      }
+
+      setDbSessionId(sessionId);
+
+      const { data: loadedSession, error: loadedSessionErr } = await supabase
+        .from('hgibuilder_sessions')
+        .select('current_artifact_title,current_artifact_version,current_artifact_code')
+        .eq('id', sessionId)
+        .single();
+
+      if (loadedSessionErr) throw loadedSessionErr;
+
+      if (loadedSession?.current_artifact_code) {
+        setCurrentArtifact((prev) => ({
+          ...prev,
+          id: sessionId,
+          title: loadedSession.current_artifact_title || prev.title,
+          code: loadedSession.current_artifact_code || prev.code,
+          version:
+            typeof loadedSession.current_artifact_version === 'number'
+              ? loadedSession.current_artifact_version
+              : prev.version,
+          timestamp: Date.now(),
+        }));
+      }
+
+      const { data: loadedMessages, error: messagesErr } = await supabase
+        .from('hgibuilder_messages')
+        .select('id,role,content,image,created_at')
+        .eq('owner_id', ownerId)
+        .eq('session_id', sessionId)
+        .order('created_at', { ascending: true });
+
+      if (messagesErr) throw messagesErr;
+
+      if (loadedMessages && loadedMessages.length > 0) {
+        setMessages(
+          loadedMessages.map((m: any) => ({
+            id: m.id,
+            role: m.role,
+            content: m.content,
+            image: m.image || undefined,
+          }))
+        );
+        lastPersistedMessageId.current = loadedMessages[loadedMessages.length - 1].id;
+      } else {
+        setMessages([
+          {
+            id: 'welcome',
+            role: MessageRole.SYSTEM,
+            content:
+              "Bienvenido a HGI Vibe Builder. Soy tu arquitecto de Inteligencia Fundamentada en lo Humano. ¿Qué solución ética y robusta construiremos hoy?",
+          },
+        ]);
+        lastPersistedMessageId.current = 'welcome';
+      }
+    } catch (e) {
+      console.error('Failed to load project into state', e);
+    } finally {
+      setDbLoading(false);
+    }
+  };
+
+  useEffect(() => {
     const initPersistence = async () => {
       if (!session) {
         setDbProjectId(null);
         setDbSessionId(null);
+        setDbProjects([]);
+        setMobileSelectedProjectId(null);
+        setMobileView('gallery');
         lastPersistedMessageId.current = null;
         return;
       }
@@ -140,16 +268,23 @@ function App() {
       try {
         const ownerId = session.user.id;
 
-        const { data: existingProjects, error: projectsErr } = await supabase
+        const { data: allProjects, error: projectsErr } = await supabase
           .from('hgibuilder_projects')
           .select('id,title,updated_at')
           .eq('owner_id', ownerId)
           .order('updated_at', { ascending: false })
-          .limit(1);
 
         if (projectsErr) throw projectsErr;
 
-        let projectId = existingProjects?.[0]?.id as string | undefined;
+        const normalizedProjects = (allProjects || []).map((p: any) => ({
+          id: p.id,
+          title: p.title,
+          updated_at: p.updated_at || null,
+        }));
+
+        setDbProjects(normalizedProjects);
+
+        let projectId = normalizedProjects?.[0]?.id as string | undefined;
 
         if (!projectId) {
           const { data: createdProject, error: createProjectErr } = await supabase
@@ -160,89 +295,20 @@ function App() {
 
           if (createProjectErr) throw createProjectErr;
           projectId = createdProject.id;
+
+          const nextProjects = [
+            { id: projectId, title: currentArtifact.title || 'Untitled App', updated_at: null },
+            ...normalizedProjects,
+          ];
+          setDbProjects(nextProjects);
         }
 
-        setDbProjectId(projectId);
-
-        const { data: existingSessions, error: sessionsErr } = await supabase
-          .from('hgibuilder_sessions')
-          .select(
-            'id,started_at,ended_at,current_artifact_title,current_artifact_version,current_artifact_code'
-          )
-          .eq('owner_id', ownerId)
-          .eq('project_id', projectId)
-          .is('ended_at', null)
-          .order('started_at', { ascending: false })
-          .limit(1);
-
-        if (sessionsErr) throw sessionsErr;
-
-        let sessionId = existingSessions?.[0]?.id as string | undefined;
-
-        if (!sessionId) {
-          const { data: createdSession, error: createSessionErr } = await supabase
-            .from('hgibuilder_sessions')
-            .insert({
-              project_id: projectId,
-              owner_id: ownerId,
-              started_at: new Date().toISOString(),
-              current_artifact_title: currentArtifact.title,
-              current_artifact_version: currentArtifact.version,
-              current_artifact_code: currentArtifact.code,
-            })
-            .select(
-              'id,started_at,ended_at,current_artifact_title,current_artifact_version,current_artifact_code'
-            )
-            .single();
-
-          if (createSessionErr) throw createSessionErr;
-          sessionId = createdSession.id;
+        if (isMobile) {
+          setMobileSelectedProjectId(projectId);
+          setMobileView('gallery');
         }
 
-        setDbSessionId(sessionId);
-
-        const { data: loadedSession, error: loadedSessionErr } = await supabase
-          .from('hgibuilder_sessions')
-          .select('current_artifact_title,current_artifact_version,current_artifact_code')
-          .eq('id', sessionId)
-          .single();
-
-        if (loadedSessionErr) throw loadedSessionErr;
-
-        if (loadedSession?.current_artifact_code) {
-          setCurrentArtifact((prev) => ({
-            ...prev,
-            id: sessionId,
-            title: loadedSession.current_artifact_title || prev.title,
-            code: loadedSession.current_artifact_code || prev.code,
-            version:
-              typeof loadedSession.current_artifact_version === 'number'
-                ? loadedSession.current_artifact_version
-                : prev.version,
-            timestamp: Date.now(),
-          }));
-        }
-
-        const { data: loadedMessages, error: messagesErr } = await supabase
-          .from('hgibuilder_messages')
-          .select('id,role,content,image,created_at')
-          .eq('owner_id', ownerId)
-          .eq('session_id', sessionId)
-          .order('created_at', { ascending: true });
-
-        if (messagesErr) throw messagesErr;
-
-        if (loadedMessages && loadedMessages.length > 0) {
-          setMessages(
-            loadedMessages.map((m: any) => ({
-              id: m.id,
-              role: m.role,
-              content: m.content,
-              image: m.image || undefined,
-            }))
-          );
-          lastPersistedMessageId.current = loadedMessages[loadedMessages.length - 1].id;
-        }
+        await loadProjectIntoState(ownerId, projectId);
       } catch (e) {
         console.error('Supabase persistence init failed', e);
       } finally {
@@ -330,6 +396,68 @@ function App() {
       }
     };
   }, [currentArtifact, session, dbSessionId, dbProjectId, collabRole]);
+
+  useEffect(() => {
+    if (!isLiveActive) return;
+    const lastMsgId = messages.length > 0 ? messages[messages.length - 1].id : 'none';
+    const fp = `${currentArtifact.title}|${currentArtifact.version}|${currentArtifact.code.length}|${lastMsgId}`;
+    if (liveContextFingerprint.current && liveContextFingerprint.current !== fp) {
+      setLiveContextStale(true);
+    }
+  }, [currentArtifact, messages, isLiveActive]);
+
+  const startLiveWithCurrentContext = async () => {
+    const liveApiKey = storageService.getSessionSecret('live_api_key') || undefined;
+    await liveSessionInstance.start(
+      {
+        onOpen: () => {
+          setIsLiveActive(true);
+          setLiveContextStale(false);
+          const lastMsgId = messages.length > 0 ? messages[messages.length - 1].id : 'none';
+          liveContextFingerprint.current = `${currentArtifact.title}|${currentArtifact.version}|${currentArtifact.code.length}|${lastMsgId}`;
+        },
+        onClose: () => {
+          setIsLiveActive(false);
+          setLiveContextStale(false);
+          liveContextFingerprint.current = null;
+        },
+        onError: () => {
+          setIsLiveActive(false);
+          setLiveContextStale(false);
+          liveContextFingerprint.current = null;
+        },
+        onTranscription: (userText, modelText) => {
+          setMessages((prev) => {
+            const newMsgs = [...prev];
+            if (userText && userText.trim().length > 0) {
+              const msg = {
+                id: Date.now().toString() + '_voice_user',
+                role: MessageRole.USER,
+                content: userText.trim(),
+              };
+              newMsgs.push(msg);
+              if (collabRole === 'guest') {
+                collaborationService.sendToHost('REMOTE_PROMPT', msg);
+              }
+            }
+            if (modelText && modelText.trim().length > 0) {
+              newMsgs.push({
+                id: Date.now().toString() + '_voice_model_architect',
+                role: MessageRole.MODEL,
+                content: modelText.trim(),
+              });
+            }
+            return newMsgs;
+          });
+        },
+      },
+      {
+        code: `TITLE: ${currentArtifact.title}\nVERSION: ${currentArtifact.version}\n\n${currentArtifact.code}`,
+        history: messages.slice(-100),
+      },
+      liveApiKey
+    );
+  };
 
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -722,49 +850,28 @@ function App() {
     if (isLiveActive) {
       liveSessionInstance.stop();
       setIsLiveActive(false);
+      setLiveContextStale(false);
+      liveContextFingerprint.current = null;
     } else {
       try {
-        const liveApiKey = storageService.getSessionSecret('live_api_key') || undefined;
-        await liveSessionInstance.start(
-          {
-            onOpen: () => setIsLiveActive(true),
-            onClose: () => setIsLiveActive(false),
-            onError: () => setIsLiveActive(false),
-            onTranscription: (userText, modelText) => {
-              setMessages(prev => {
-                const newMsgs = [...prev];
-                if (userText && userText.trim().length > 0) {
-                  const msg = {
-                    id: Date.now().toString() + '_voice_user',
-                    role: MessageRole.USER,
-                    content: userText.trim()
-                  };
-                  newMsgs.push(msg);
-                   if (collabRole === 'guest') {
-                        collaborationService.sendToHost('REMOTE_PROMPT', msg);
-                   }
-                }
-                if (modelText && modelText.trim().length > 0) {
-                  newMsgs.push({
-                    id: Date.now().toString() + '_voice_model_architect',
-                    role: MessageRole.MODEL,
-                    content: modelText.trim()
-                  });
-                }
-                return newMsgs;
-              });
-            }
-          },
-          {
-            code: currentArtifact.code,
-            history: messages
-          },
-          liveApiKey
-        );
+        await startLiveWithCurrentContext();
       } catch (e) {
         console.error("Failed to start live session", e);
         alert("Se requiere acceso al micrófono para el debate en vivo.");
       }
+    }
+  };
+
+  const handleRefreshLiveContext = async () => {
+    if (!isLiveActive) return;
+    try {
+      liveSessionInstance.stop();
+      setIsLiveActive(false);
+      setLiveContextStale(false);
+      liveContextFingerprint.current = null;
+      await startLiveWithCurrentContext();
+    } catch (e) {
+      console.error('Failed to refresh live context', e);
     }
   };
 
@@ -935,10 +1042,10 @@ function App() {
   }
 
   return (
-    <div className="flex h-screen bg-hgi-dark text-hgi-text font-sans overflow-hidden">
+    <div className="flex flex-col md:flex-row h-screen bg-hgi-dark text-hgi-text font-sans overflow-hidden">
       
       {/* Left Panel: Chat & Controls */}
-      <div className="w-1/3 flex flex-col border-r border-hgi-border bg-hgi-dark/95 backdrop-blur">
+      <div className="hidden md:flex md:w-2/5 lg:w-1/3 flex-col border-r border-hgi-border bg-hgi-dark/95 backdrop-blur">
         
         {/* Header */}
         <div className="p-4 border-b border-hgi-border flex items-center justify-between">
@@ -1019,7 +1126,7 @@ function App() {
       </div>
 
       {/* Right Panel: Workspace */}
-      <div className="flex-1 flex flex-col bg-hgi-dark/50 relative">
+      <div className="flex-1 flex flex-col bg-hgi-dark/50 relative w-full">
         <div className="absolute inset-0 pointer-events-none bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5"></div>
         
         {/* Toolbar */}
@@ -1029,7 +1136,7 @@ function App() {
              {/* Title Input */}
              <div className="flex items-center space-x-2 group">
                 <Pencil className="w-3 h-3 text-hgi-muted group-hover:text-hgi-orange transition-colors" />
-                <input type="text" value={currentArtifact.title} disabled={collabRole === 'guest'} onFocus={() => { titleBeforeEdit.current = { ...currentArtifact }; }} onBlur={() => { if (titleBeforeEdit.current && titleBeforeEdit.current.title !== currentArtifact.title) { saveToUndo(titleBeforeEdit.current); titleBeforeEdit.current = null; }}} onChange={(e) => setCurrentArtifact(prev => ({ ...prev, title: e.target.value, id: prev.id === 'init' ? Date.now().toString() : prev.id }))} className="bg-transparent text-hgi-text font-bold text-sm outline-none border-b border-transparent focus:border-hgi-orange hover:border-hgi-border transition-all w-40 sm:w-64 placeholder-hgi-muted/30 disabled:opacity-70 disabled:cursor-not-allowed" placeholder="Nombre del Proyecto" />
+                <input type="text" value={currentArtifact.title} disabled={collabRole === 'guest' || isLearningMode} onFocus={() => { titleBeforeEdit.current = { ...currentArtifact }; }} onBlur={() => { if (titleBeforeEdit.current && titleBeforeEdit.current.title !== currentArtifact.title) { saveToUndo(titleBeforeEdit.current); titleBeforeEdit.current = null; }}} onChange={(e) => setCurrentArtifact(prev => ({ ...prev, title: e.target.value, id: prev.id === 'init' ? Date.now().toString() : prev.id }))} className="bg-transparent text-hgi-text font-bold text-sm outline-none border-b border-transparent focus:border-hgi-orange hover:border-hgi-border transition-all w-40 sm:w-64 placeholder-hgi-muted/30 disabled:opacity-70 disabled:cursor-not-allowed" placeholder="Nombre del Proyecto" />
              </div>
              
              <div className="h-4 w-px bg-hgi-border/50 hidden sm:block"></div>
@@ -1037,20 +1144,30 @@ function App() {
              {/* View Mode */}
              <div className="flex bg-hgi-card p-1 rounded-sm border border-hgi-border">
               <button onClick={() => setViewMode(AppMode.PREVIEW)} className={`flex items-center space-x-2 px-4 py-1.5 rounded-sm text-xs font-bold uppercase tracking-wider transition-all duration-200 ${viewMode === AppMode.PREVIEW ? 'bg-hgi-orange text-black shadow-lg shadow-hgi-orange/20' : 'text-hgi-muted hover:text-hgi-orange hover:bg-hgi-dark'}`}><Play className="w-3 h-3" /><span className="hidden lg:inline">Vista</span></button>
-              <button onClick={() => setViewMode(AppMode.CODE)} className={`flex items-center space-x-2 px-4 py-1.5 rounded-sm text-xs font-bold uppercase tracking-wider transition-all duration-200 ${viewMode === AppMode.CODE ? 'bg-hgi-orange text-black shadow-lg shadow-hgi-orange/20' : 'text-hgi-muted hover:text-hgi-orange hover:bg-hgi-dark'}`}><Code className="w-3 h-3" /><span className="hidden lg:inline">Código</span></button>
+              {!isLearningMode && (
+                <button onClick={() => setViewMode(AppMode.CODE)} className={`flex items-center space-x-2 px-4 py-1.5 rounded-sm text-xs font-bold uppercase tracking-wider transition-all duration-200 ${viewMode === AppMode.CODE ? 'bg-hgi-orange text-black shadow-lg shadow-hgi-orange/20' : 'text-hgi-muted hover:text-hgi-orange hover:bg-hgi-dark'}`}><Code className="w-3 h-3" /><span className="hidden lg:inline">Código</span></button>
+              )}
             </div>
 
             {/* Undo/Redo */}
-            <div className={`flex bg-hgi-card p-1 rounded-sm border border-hgi-border space-x-1 ${collabRole === 'guest' ? 'opacity-50 pointer-events-none' : ''}`}>
+            <div className={`flex bg-hgi-card p-1 rounded-sm border border-hgi-border space-x-1 ${(collabRole === 'guest' || isLearningMode) ? 'opacity-50 pointer-events-none' : ''}`}>
               <button onClick={performUndo} disabled={undoStack.length === 0} className="p-1.5 text-hgi-muted hover:text-hgi-text hover:bg-hgi-dark rounded-sm disabled:opacity-30 transition-all"><Undo2 className="w-4 h-4" /></button>
               <div className="w-px h-full bg-hgi-border/50 mx-1"></div>
               <button onClick={performRedo} disabled={redoStack.length === 0} className="p-1.5 text-hgi-muted hover:text-hgi-text hover:bg-hgi-dark rounded-sm disabled:opacity-30 transition-all"><Redo2 className="w-4 h-4" /></button>
             </div>
             
-            <button onClick={handleEthicsAudit} disabled={!currentArtifact.code || collabRole === 'guest'} className={`p-2 rounded-sm transition-all duration-200 border border-transparent ${currentArtifact.code ? 'text-hgi-muted hover:text-green-400 hover:bg-hgi-card hover:border-green-400/30' : 'text-hgi-border cursor-not-allowed'}`}><ShieldCheck className="w-4 h-4" /></button>
+            {!isLearningMode && (
+              <button onClick={handleEthicsAudit} disabled={!currentArtifact.code || collabRole === 'guest'} className={`p-2 rounded-sm transition-all duration-200 border border-transparent ${currentArtifact.code ? 'text-hgi-muted hover:text-green-400 hover:bg-hgi-card hover:border-green-400/30' : 'text-hgi-border cursor-not-allowed'}`}><ShieldCheck className="w-4 h-4" /></button>
+            )}
           </div>
 
           <div className="flex items-center space-x-4">
+             <button onClick={toggleLiveSession} className={`p-2 rounded-sm transition-all duration-200 border ${isLiveActive ? 'bg-cyan-600 border-cyan-500 text-white shadow-[0_0_15px_rgba(6,182,212,0.4)] hover:bg-cyan-500' : 'bg-hgi-card border-hgi-border text-hgi-muted hover:text-cyan-400 hover:border-cyan-400/50'}`}><Mic className="w-4 h-4" /></button>
+             {isLiveActive && liveContextStale && (
+               <button onClick={handleRefreshLiveContext} className="text-xs font-mono px-2 py-1 rounded-sm border transition-all flex items-center space-x-2 bg-cyan-950/20 text-cyan-300 border-cyan-500/40 hover:border-cyan-400 hover:text-cyan-200">
+                 <span>Refresh</span>
+               </button>
+             )}
              <button onClick={handleSignOut} className="text-xs font-mono px-2 py-1 rounded-sm border transition-all flex items-center space-x-2 bg-hgi-card text-hgi-text border-hgi-border hover:border-hgi-orange hover:text-hgi-orange">
                <span>{session.user.email}</span>
                <span className="text-hgi-muted">/</span>
@@ -1082,14 +1199,18 @@ function App() {
                 )}
              </div>
 
-             <button onClick={() => setShowSnippetLibrary(!showSnippetLibrary)} className={`flex items-center space-x-2 px-3 py-1.5 rounded-sm text-xs transition-all duration-200 border border-hgi-border uppercase font-bold tracking-wider ${showSnippetLibrary ? 'bg-hgi-card text-hgi-orange border-hgi-orange shadow-[0_0_10px_rgba(255,79,0,0.2)]' : 'bg-hgi-dark text-hgi-muted hover:text-hgi-text hover:bg-hgi-card'}`}><Layout className="w-3 h-3" /></button>
+             {!isLearningMode && (
+               <button onClick={() => setShowSnippetLibrary(!showSnippetLibrary)} className={`flex items-center space-x-2 px-3 py-1.5 rounded-sm text-xs transition-all duration-200 border border-hgi-border uppercase font-bold tracking-wider ${showSnippetLibrary ? 'bg-hgi-card text-hgi-orange border-hgi-orange shadow-[0_0_10px_rgba(255,79,0,0.2)]' : 'bg-hgi-dark text-hgi-muted hover:text-hgi-text hover:bg-hgi-card'}`}><Layout className="w-3 h-3" /></button>
+             )}
 
              {/* Git & Publish Actions */}
+             {!isLearningMode && (
              <div className="flex bg-hgi-card p-1 rounded-sm border border-hgi-border space-x-1">
                 <button onClick={() => setShowGitModal(true)} disabled={!currentArtifact.code} className={`p-1.5 rounded-sm transition-all duration-200 ${currentArtifact.code ? 'text-hgi-text hover:bg-hgi-dark hover:text-hgi-orange' : 'text-hgi-muted opacity-50 cursor-not-allowed'}`} title="Exportar a Git"><Github className="w-4 h-4" /></button>
                 <div className="w-px h-full bg-hgi-border/50"></div>
                 <button onClick={() => setShowPublishModal(true)} disabled={!currentArtifact.code} className={`p-1.5 rounded-sm transition-all duration-200 ${currentArtifact.code ? 'text-hgi-text hover:bg-hgi-dark hover:text-hgi-orange' : 'text-hgi-muted opacity-50 cursor-not-allowed'}`} title="Publicar App"><Rocket className="w-4 h-4" /></button>
              </div>
+             )}
 
              <button onClick={handleDownload} className="flex items-center space-x-2 px-3 py-1.5 bg-hgi-card rounded-sm text-xs text-hgi-text transition-all duration-200 border border-hgi-border uppercase font-bold tracking-wider hover:border-hgi-orange hover:text-hgi-orange hover:shadow-[0_0_10px_rgba(255,79,0,0.2)]"><Download className="w-3 h-3" /></button>
           </div>
@@ -1097,15 +1218,77 @@ function App() {
 
         {/* Content Area */}
         <div className="flex-1 overflow-hidden relative z-10 flex">
-          {viewMode === AppMode.PREVIEW ? (
-            <div className="flex-1 h-full p-8 bg-transparent">
-                <AppPreview code={currentArtifact.code} />
-            </div>
-          ) : (
-            <div className="flex-1 h-full">
-               <CodeEditor code={currentArtifact.code} />
+          {isMobile && (
+            <div className="flex-1 h-full p-4">
+              {mobileView === 'gallery' ? (
+                <div className="h-full flex flex-col">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="text-xs font-mono uppercase tracking-wider text-hgi-muted">Proyectos</div>
+                    {dbLoading && (
+                      <div className="flex items-center space-x-2 text-hgi-orange animate-pulse px-2">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        <span className="text-[10px] font-mono uppercase">Cargando…</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1 overflow-y-auto space-y-2">
+                    {dbProjects.map((p) => (
+                      <button
+                        key={p.id}
+                        onClick={async () => {
+                          if (!session) return;
+                          setMobileSelectedProjectId(p.id);
+                          await loadProjectIntoState(session.user.id, p.id);
+                          setMobileView('preview');
+                        }}
+                        className={`w-full text-left p-3 rounded-sm border transition-all ${mobileSelectedProjectId === p.id ? 'bg-hgi-card border-hgi-orange' : 'bg-hgi-dark border-hgi-border hover:border-hgi-orange/50'}`}
+                      >
+                        <div className="text-sm font-bold text-hgi-text truncate">{p.title || 'Untitled App'}</div>
+                        <div className="text-[10px] text-hgi-muted font-mono uppercase tracking-wider mt-1">
+                          {p.updated_at ? new Date(p.updated_at).toLocaleString() : '—'}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="h-full flex flex-col">
+                  <div className="flex items-center justify-between mb-4">
+                    <button
+                      onClick={() => setMobileView('gallery')}
+                      className="text-xs font-mono uppercase tracking-wider text-hgi-muted hover:text-hgi-orange transition-colors"
+                    >
+                      ← Proyectos
+                    </button>
+                    {dbLoading && (
+                      <div className="flex items-center space-x-2 text-hgi-orange animate-pulse px-2">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        <span className="text-[10px] font-mono uppercase">Cargando…</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1 overflow-hidden">
+                    <AppPreview code={currentArtifact.code} />
+                  </div>
+                </div>
+              )}
             </div>
           )}
+
+          {!isMobile &&
+            (viewMode === AppMode.PREVIEW ? (
+              <div className="flex-1 h-full p-8 bg-transparent">
+                <AppPreview code={currentArtifact.code} />
+              </div>
+            ) : (
+              <div className="flex-1 h-full">
+                {isLearningMode ? (
+                  <AppPreview code={currentArtifact.code} />
+                ) : (
+                  <CodeEditor code={currentArtifact.code} />
+                )}
+              </div>
+            ))}
 
           {/* Snippet Library Sidebar */}
           {showSnippetLibrary && (
