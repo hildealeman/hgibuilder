@@ -112,6 +112,33 @@ function App() {
   const toolbarMenuRef = useRef<HTMLDivElement>(null);
   const projectMenuRef = useRef<HTMLDivElement>(null);
 
+  const resetWorkspaceForProject = (title: string) => {
+    setInput('');
+    setSelectedImage(null);
+    setShowSnippetLibrary(false);
+    setShowHistoryDropdown(false);
+    setUndoStack([]);
+    setRedoStack([]);
+    setHistory([]);
+    setDbSessionId(null);
+    lastPersistedMessageId.current = null;
+    setCurrentArtifact({
+      id: 'init',
+      title: title || 'Untitled App',
+      code: '',
+      version: 0,
+      timestamp: Date.now(),
+    });
+    setMessages([
+      {
+        id: 'welcome',
+        role: MessageRole.SYSTEM,
+        content:
+          "Bienvenido a HGI Vibe Builder. Soy tu arquitecto de Inteligencia Fundamentada en lo Humano. ¿Qué solución ética y robusta construiremos hoy?",
+      },
+    ]);
+  };
+
   useEffect(() => {
     if (!showToolbarMenu && !showProjectMenu) return;
     const onMouseDown = (e: MouseEvent) => {
@@ -172,7 +199,7 @@ function App() {
     }
   }, [isLearningMode, viewMode]);
 
-  const loadProjectIntoState = async (ownerId: string, projectId: string) => {
+  const loadProjectIntoState = async (ownerId: string, projectId: string, projectTitle?: string) => {
     setDbLoading(true);
     try {
       setDbProjectId(projectId);
@@ -192,15 +219,16 @@ function App() {
       let sessionId = existingSessions?.[0]?.id as string | undefined;
 
       if (!sessionId) {
+        const seedTitle = projectTitle || dbProjects.find((p) => p.id === projectId)?.title || 'Untitled App';
         const { data: createdSession, error: createSessionErr } = await supabase
           .from('hgibuilder_sessions')
           .insert({
             project_id: projectId,
             owner_id: ownerId,
             started_at: new Date().toISOString(),
-            current_artifact_title: currentArtifact.title,
-            current_artifact_version: currentArtifact.version,
-            current_artifact_code: currentArtifact.code,
+            current_artifact_title: seedTitle,
+            current_artifact_version: 0,
+            current_artifact_code: '',
           })
           .select(
             'id,started_at,ended_at,current_artifact_title,current_artifact_version,current_artifact_code'
@@ -272,11 +300,13 @@ function App() {
     }
   };
 
-  const handleSelectProject = async (projectId: string) => {
+  const handleSelectProject = async (projectId: string, projectTitleOverride?: string) => {
     if (!session) return;
     setShowProjectMenu(false);
+    const nextTitle = projectTitleOverride || dbProjects.find((p) => p.id === projectId)?.title || 'Untitled App';
+    resetWorkspaceForProject(nextTitle);
     setMobileSelectedProjectId(projectId);
-    await loadProjectIntoState(session.user.id, projectId);
+    await loadProjectIntoState(session.user.id, projectId, nextTitle);
     if (isMobile) setMobileView('preview');
   };
 
@@ -305,7 +335,12 @@ function App() {
         ...dbProjects,
       ];
       setDbProjects(nextProjects);
-      await handleSelectProject(createdProject.id);
+      resetWorkspaceForProject(createdProject.title || 'Untitled App');
+      await loadProjectIntoState(ownerId, createdProject.id, createdProject.title || 'Untitled App');
+      if (isMobile) {
+        setMobileSelectedProjectId(createdProject.id);
+        setMobileView('preview');
+      }
     } catch (e) {
       console.error('Failed to create project', e);
     } finally {
@@ -346,6 +381,7 @@ function App() {
         setDbProjects(normalizedProjects);
 
         let projectId = normalizedProjects?.[0]?.id as string | undefined;
+        let projectTitle = normalizedProjects?.[0]?.title as string | undefined;
 
         if (!projectId) {
           const { data: createdProject, error: createProjectErr } = await supabase
@@ -356,6 +392,7 @@ function App() {
 
           if (createProjectErr) throw createProjectErr;
           projectId = createdProject.id;
+          projectTitle = currentArtifact.title || 'Untitled App';
 
           const nextProjects = [
             { id: projectId, title: currentArtifact.title || 'Untitled App', updated_at: null },
@@ -369,7 +406,8 @@ function App() {
           setMobileView('gallery');
         }
 
-        await loadProjectIntoState(ownerId, projectId);
+        resetWorkspaceForProject(projectTitle || 'Untitled App');
+        await loadProjectIntoState(ownerId, projectId, projectTitle);
       } catch (e) {
         console.error('Supabase persistence init failed', e);
       } finally {
@@ -1216,7 +1254,7 @@ function App() {
                      {dbProjects.map((p) => (
                        <button
                          key={p.id}
-                         onClick={() => handleSelectProject(p.id)}
+                         onClick={() => handleSelectProject(p.id, p.title)}
                          className={`w-full text-left p-3 hover:bg-hgi-dark transition-colors border-b border-hgi-border/50 last:border-0 ${p.id === dbProjectId ? 'bg-hgi-dark' : ''}`}
                        >
                          <div className="text-xs font-bold text-hgi-text truncate">{p.title || 'Untitled App'}</div>
@@ -1435,7 +1473,7 @@ function App() {
              </button>
 
              {lastSavedTime && <span className="hidden text-xs text-hgi-muted font-mono hidden xl:block">Guardado: {lastSavedTime}</span>}
-             {hasSavedState && <button onClick={handleRestore} disabled={collabRole === 'guest'} className="flex items-center space-x-2 px-3 py-1.5 rounded-sm text-xs text-yellow-500 transition-all duration-200 border border-transparent hover:bg-yellow-500/10 hover:border-yellow-500/30 disabled:opacity-50 hidden 2xl:flex"><RotateCcw className="w-3 h-3" /></button>}
+             {hasSavedState && <button onClick={handleRestore} disabled={collabRole === 'guest'} className="hidden flex items-center space-x-2 px-3 py-1.5 rounded-sm text-xs text-yellow-500 transition-all duration-200 border border-transparent hover:bg-yellow-500/10 hover:border-yellow-500/30 disabled:opacity-50 hidden 2xl:flex"><RotateCcw className="w-3 h-3" /></button>}
 
              {/* History Dropdown */}
              <div className="relative hidden">
@@ -1456,19 +1494,19 @@ function App() {
              </div>
 
              {!isLearningMode && (
-               <button onClick={() => setShowSnippetLibrary(!showSnippetLibrary)} className={`flex items-center space-x-2 px-3 py-1.5 rounded-sm text-xs transition-all duration-200 border border-hgi-border uppercase font-bold tracking-wider ${showSnippetLibrary ? 'bg-hgi-card text-hgi-orange border-hgi-orange shadow-[0_0_10px_rgba(255,79,0,0.2)]' : 'bg-hgi-dark text-hgi-muted hover:text-hgi-text hover:bg-hgi-card'} hidden 2xl:flex`}><Layout className="w-3 h-3" /></button>
-             )}
+               <button onClick={() => setShowSnippetLibrary(!showSnippetLibrary)} className={`hidden flex items-center space-x-2 px-3 py-1.5 rounded-sm text-xs transition-all duration-200 border border-hgi-border uppercase font-bold tracking-wider ${showSnippetLibrary ? 'bg-hgi-card text-hgi-orange border-hgi-orange shadow-[0_0_10px_rgba(255,79,0,0.2)]' : 'bg-hgi-dark text-hgi-muted hover:text-hgi-text hover:bg-hgi-card'} hidden 2xl:flex`}><Layout className="w-3 h-3" /></button>
+            )}
 
              {/* Git & Publish Actions */}
              {!isLearningMode && (
-             <div className="flex bg-hgi-card p-1 rounded-sm border border-hgi-border space-x-1 hidden 2xl:flex">
-                <button onClick={() => setShowGitModal(true)} disabled={!currentArtifact.code} className={`p-1.5 rounded-sm transition-all duration-200 ${currentArtifact.code ? 'text-hgi-text hover:bg-hgi-dark hover:text-hgi-orange' : 'text-hgi-muted opacity-50 cursor-not-allowed'}`} title="Exportar a Git"><Github className="w-4 h-4" /></button>
-                <div className="w-px h-full bg-hgi-border/50"></div>
-                <button onClick={() => setShowPublishModal(true)} disabled={!currentArtifact.code} className={`p-1.5 rounded-sm transition-all duration-200 ${currentArtifact.code ? 'text-hgi-text hover:bg-hgi-dark hover:text-hgi-orange' : 'text-hgi-muted opacity-50 cursor-not-allowed'}`} title="Publicar App"><Rocket className="w-4 h-4" /></button>
-             </div>
-             )}
+            <div className="hidden flex bg-hgi-card p-1 rounded-sm border border-hgi-border space-x-1 hidden 2xl:flex">
+               <button onClick={() => setShowGitModal(true)} disabled={!currentArtifact.code} className={`p-1.5 rounded-sm transition-all duration-200 ${currentArtifact.code ? 'text-hgi-text hover:bg-hgi-dark hover:text-hgi-orange' : 'text-hgi-muted opacity-50 cursor-not-allowed'}`} title="Exportar a Git"><Github className="w-4 h-4" /></button>
+               <div className="w-px h-full bg-hgi-border/50"></div>
+               <button onClick={() => setShowPublishModal(true)} disabled={!currentArtifact.code} className={`p-1.5 rounded-sm transition-all duration-200 ${currentArtifact.code ? 'text-hgi-text hover:bg-hgi-dark hover:text-hgi-orange' : 'text-hgi-muted opacity-50 cursor-not-allowed'}`} title="Publicar App"><Rocket className="w-4 h-4" /></button>
+            </div>
+            )}
 
-             <button onClick={handleDownload} className="flex items-center space-x-2 px-3 py-1.5 bg-hgi-card rounded-sm text-xs text-hgi-text transition-all duration-200 border border-hgi-border uppercase font-bold tracking-wider hover:border-hgi-orange hover:text-hgi-orange hover:shadow-[0_0_10px_rgba(255,79,0,0.2)] hidden 2xl:flex"><Download className="w-3 h-3" /></button>
+             <button onClick={handleDownload} className="hidden flex items-center space-x-2 px-3 py-1.5 bg-hgi-card rounded-sm text-xs text-hgi-text transition-all duration-200 border border-hgi-border uppercase font-bold tracking-wider hover:border-hgi-orange hover:text-hgi-orange hover:shadow-[0_0_10px_rgba(255,79,0,0.2)] hidden 2xl:flex"><Download className="w-3 h-3" /></button>
           </div>
         </div>
 
