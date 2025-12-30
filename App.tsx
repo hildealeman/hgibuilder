@@ -5,7 +5,7 @@ import {
   Monitor, Activity, RotateCcw, Save, Pencil,
   ArrowDownToLine, MessageSquare, History, Clock,
   ShieldCheck, Palette, Github, HelpCircle, Settings,
-  Undo2, Redo2, Layout, X, Paperclip, Share2, Users, Link as LinkIcon, Rocket, MoreHorizontal
+  Undo2, Redo2, Layout, X, Paperclip, Share2, Users, Link as LinkIcon, Rocket, MoreHorizontal, Folder, ChevronDown
 } from 'lucide-react';
 import { generateAppCode, generateImage, validateCodeEthics } from './services/geminiService';
 import { liveSessionInstance } from './services/liveApiService';
@@ -89,6 +89,7 @@ function App() {
   const [hasSavedState, setHasSavedState] = useState(false);
   const [lastSavedTime, setLastSavedTime] = useState<string | null>(null);
   const [showToolbarMenu, setShowToolbarMenu] = useState(false);
+  const [showProjectMenu, setShowProjectMenu] = useState(false);
   
   // Config State
   const [config, setConfig] = useState<GenerationConfig>({
@@ -108,18 +109,22 @@ function App() {
   const artifactSaveTimer = useRef<number | null>(null);
   const liveContextFingerprint = useRef<string | null>(null);
   const toolbarMenuRef = useRef<HTMLDivElement>(null);
+  const projectMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!showToolbarMenu) return;
+    if (!showToolbarMenu && !showProjectMenu) return;
     const onMouseDown = (e: MouseEvent) => {
       const target = e.target as Node;
-      if (toolbarMenuRef.current && !toolbarMenuRef.current.contains(target)) {
+      const toolbarOutside = toolbarMenuRef.current && !toolbarMenuRef.current.contains(target);
+      const projectOutside = projectMenuRef.current && !projectMenuRef.current.contains(target);
+      if (toolbarOutside && projectOutside) {
         setShowToolbarMenu(false);
+        setShowProjectMenu(false);
       }
     };
     document.addEventListener('mousedown', onMouseDown);
     return () => document.removeEventListener('mousedown', onMouseDown);
-  }, [showToolbarMenu]);
+  }, [showToolbarMenu, showProjectMenu]);
 
   useEffect(() => {
     let mounted = true;
@@ -261,6 +266,46 @@ function App() {
       }
     } catch (e) {
       console.error('Failed to load project into state', e);
+    } finally {
+      setDbLoading(false);
+    }
+  };
+
+  const handleSelectProject = async (projectId: string) => {
+    if (!session) return;
+    setShowProjectMenu(false);
+    setMobileSelectedProjectId(projectId);
+    await loadProjectIntoState(session.user.id, projectId);
+    if (isMobile) setMobileView('preview');
+  };
+
+  const handleCreateNewProject = async () => {
+    if (!session) return;
+    if (collabRole === 'guest') return;
+    setShowProjectMenu(false);
+    setDbLoading(true);
+    try {
+      const ownerId = session.user.id;
+      const { data: createdProject, error: createProjectErr } = await supabase
+        .from('hgibuilder_projects')
+        .insert({ owner_id: ownerId, title: currentArtifact.title || 'Untitled App' })
+        .select('id,title,updated_at')
+        .single();
+
+      if (createProjectErr) throw createProjectErr;
+
+      const nextProjects = [
+        {
+          id: createdProject.id,
+          title: createdProject.title,
+          updated_at: createdProject.updated_at || null,
+        },
+        ...dbProjects,
+      ];
+      setDbProjects(nextProjects);
+      await handleSelectProject(createdProject.id);
+    } catch (e) {
+      console.error('Failed to create project', e);
     } finally {
       setDbLoading(false);
     }
@@ -1144,22 +1189,67 @@ function App() {
         <div className="absolute inset-0 pointer-events-none bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5"></div>
         
         {/* Toolbar */}
-        <div className="min-h-14 h-auto py-2 border-b border-hgi-border bg-hgi-dark flex items-center justify-between gap-2 px-4 z-10 min-w-0 flex-wrap overflow-visible">
+        <div className="h-12 border-b border-hgi-border bg-hgi-dark flex items-center justify-between gap-2 px-3 z-10 min-w-0 overflow-visible">
           
           <div className="flex items-center space-x-4 min-w-0 flex-1">
-             {/* Title Input */}
-             <div className="flex items-center space-x-2 group">
+             <div className="relative" ref={projectMenuRef}>
+               <button
+                 onClick={() => setShowProjectMenu((v) => !v)}
+                 className="flex items-center space-x-2 px-2 py-1 rounded-sm transition-all duration-200 border bg-hgi-card border-hgi-border text-hgi-text hover:border-hgi-orange min-w-0"
+               >
+                 <Folder className="w-3.5 h-3.5 text-hgi-muted" />
+                 <span className="text-xs font-mono uppercase tracking-wider truncate max-w-[140px]">
+                   {dbProjects.find((p) => p.id === dbProjectId)?.title || currentArtifact.title || 'Proyecto'}
+                 </span>
+                 <ChevronDown className="w-3.5 h-3.5 text-hgi-muted" />
+               </button>
+
+               {showProjectMenu && (
+                 <div className="absolute top-full left-0 mt-2 w-80 bg-hgi-card border border-hgi-border rounded-sm shadow-xl z-[9999] overflow-hidden">
+                   <div className="p-2 border-b border-hgi-border text-[10px] text-hgi-muted font-mono uppercase">Proyecto</div>
+                   <div className="max-h-64 overflow-y-auto">
+                     {dbProjects.length === 0 && (
+                       <div className="p-3 text-xs text-hgi-muted">Sin proyectos</div>
+                     )}
+                     {dbProjects.map((p) => (
+                       <button
+                         key={p.id}
+                         onClick={() => handleSelectProject(p.id)}
+                         className={`w-full text-left p-3 hover:bg-hgi-dark transition-colors border-b border-hgi-border/50 last:border-0 ${p.id === dbProjectId ? 'bg-hgi-dark' : ''}`}
+                       >
+                         <div className="text-xs font-bold text-hgi-text truncate">{p.title || 'Untitled App'}</div>
+                         <div className="text-[10px] text-hgi-muted font-mono uppercase tracking-wider mt-1">
+                           {p.updated_at ? new Date(p.updated_at).toLocaleString() : '—'}
+                         </div>
+                       </button>
+                     ))}
+                   </div>
+                   <div className="p-2 border-t border-hgi-border">
+                     <button
+                       onClick={handleCreateNewProject}
+                       disabled={dbLoading || collabRole === 'guest'}
+                       className="w-full flex items-center justify-between p-2 rounded-sm hover:bg-hgi-dark transition-colors disabled:opacity-50"
+                     >
+                       <span className="text-xs font-mono uppercase tracking-wider text-hgi-text">Nuevo Proyecto</span>
+                       <Sparkles className="w-4 h-4 text-hgi-muted" />
+                     </button>
+                   </div>
+                 </div>
+               )}
+             </div>
+
+             <div className="flex items-center space-x-2 group min-w-0">
                 <Pencil className="w-3 h-3 text-hgi-muted group-hover:text-hgi-orange transition-colors" />
-                <input type="text" value={currentArtifact.title} disabled={collabRole === 'guest' || isLearningMode} onFocus={() => { titleBeforeEdit.current = { ...currentArtifact }; }} onBlur={() => { if (titleBeforeEdit.current && titleBeforeEdit.current.title !== currentArtifact.title) { saveToUndo(titleBeforeEdit.current); titleBeforeEdit.current = null; }}} onChange={(e) => setCurrentArtifact(prev => ({ ...prev, title: e.target.value, id: prev.id === 'init' ? Date.now().toString() : prev.id }))} className="bg-transparent text-hgi-text font-bold text-sm outline-none border-b border-transparent focus:border-hgi-orange hover:border-hgi-border transition-all w-32 sm:w-48 md:w-64 placeholder-hgi-muted/30 disabled:opacity-70 disabled:cursor-not-allowed" placeholder="Nombre del Proyecto" />
+                <input type="text" value={currentArtifact.title} disabled={collabRole === 'guest' || isLearningMode} onFocus={() => { titleBeforeEdit.current = { ...currentArtifact }; }} onBlur={() => { if (titleBeforeEdit.current && titleBeforeEdit.current.title !== currentArtifact.title) { saveToUndo(titleBeforeEdit.current); titleBeforeEdit.current = null; }}} onChange={(e) => setCurrentArtifact(prev => ({ ...prev, title: e.target.value, id: prev.id === 'init' ? Date.now().toString() : prev.id }))} className="bg-transparent text-hgi-text font-bold text-sm outline-none border-b border-transparent focus:border-hgi-orange hover:border-hgi-border transition-all w-28 sm:w-40 md:w-56 placeholder-hgi-muted/30 disabled:opacity-70 disabled:cursor-not-allowed truncate min-w-0" placeholder="Nombre" />
              </div>
              
              <div className="h-4 w-px bg-hgi-border/50 hidden sm:block"></div>
 
              {/* View Mode */}
-             <div className="flex bg-hgi-card p-1 rounded-sm border border-hgi-border">
-              <button onClick={() => setViewMode(AppMode.PREVIEW)} className={`flex items-center space-x-2 px-4 py-1.5 rounded-sm text-xs font-bold uppercase tracking-wider transition-all duration-200 ${viewMode === AppMode.PREVIEW ? 'bg-hgi-orange text-black shadow-lg shadow-hgi-orange/20' : 'text-hgi-muted hover:text-hgi-orange hover:bg-hgi-dark'}`}><Play className="w-3 h-3" /><span className="hidden lg:inline">Vista</span></button>
+            <div className="flex bg-hgi-card p-1 rounded-sm border border-hgi-border">
+              <button onClick={() => setViewMode(AppMode.PREVIEW)} className={`flex items-center space-x-2 px-3 py-1 rounded-sm text-xs font-bold uppercase tracking-wider transition-all duration-200 ${viewMode === AppMode.PREVIEW ? 'bg-hgi-orange text-black shadow-lg shadow-hgi-orange/20' : 'text-hgi-muted hover:text-hgi-orange hover:bg-hgi-dark'}`}><Play className="w-3 h-3" /><span className="hidden lg:inline">Vista</span></button>
               {!isLearningMode && (
-                <button onClick={() => setViewMode(AppMode.CODE)} className={`flex items-center space-x-2 px-4 py-1.5 rounded-sm text-xs font-bold uppercase tracking-wider transition-all duration-200 ${viewMode === AppMode.CODE ? 'bg-hgi-orange text-black shadow-lg shadow-hgi-orange/20' : 'text-hgi-muted hover:text-hgi-orange hover:bg-hgi-dark'}`}><Code className="w-3 h-3" /><span className="hidden lg:inline">Código</span></button>
+                <button onClick={() => setViewMode(AppMode.CODE)} className={`flex items-center space-x-2 px-3 py-1 rounded-sm text-xs font-bold uppercase tracking-wider transition-all duration-200 ${viewMode === AppMode.CODE ? 'bg-hgi-orange text-black shadow-lg shadow-hgi-orange/20' : 'text-hgi-muted hover:text-hgi-orange hover:bg-hgi-dark'}`}><Code className="w-3 h-3" /><span className="hidden lg:inline">Código</span></button>
               )}
             </div>
 
@@ -1175,7 +1265,7 @@ function App() {
             )}
           </div>
 
-          <div className="flex items-center justify-end flex-wrap gap-2 min-w-0">
+          <div className="flex items-center justify-end gap-2 min-w-0">
              <button onClick={toggleLiveSession} className={`p-2 rounded-sm transition-all duration-200 border ${isLiveActive ? 'bg-cyan-600 border-cyan-500 text-white shadow-[0_0_15px_rgba(6,182,212,0.4)] hover:bg-cyan-500' : 'bg-hgi-card border-hgi-border text-hgi-muted hover:text-cyan-400 hover:border-cyan-400/50'}`}><Mic className="w-4 h-4" /></button>
              {isLiveActive && liveContextStale && (
                <button onClick={handleRefreshLiveContext} className="text-xs font-mono px-2 py-1 rounded-sm border transition-all flex items-center space-x-2 bg-cyan-950/20 text-cyan-300 border-cyan-500/40 hover:border-cyan-400 hover:text-cyan-200">
@@ -1286,12 +1376,12 @@ function App() {
              </div>
 
              <button onClick={handleSignOut} className="text-xs font-mono px-2 py-1 rounded-sm border transition-all flex items-center space-x-2 bg-hgi-card text-hgi-text border-hgi-border hover:border-hgi-orange hover:text-hgi-orange max-w-[220px] min-w-0">
-               <span className="truncate min-w-0">{session.user.email}</span>
-               <span className="text-hgi-muted">/</span>
+               <span className="truncate min-w-0 hidden xl:inline">{session.user.email}</span>
+               <span className="text-hgi-muted hidden xl:inline">/</span>
                <span>Salir</span>
              </button>
              {/* Live Share */}
-             <button onClick={startCollaboration} disabled={collabRole === 'guest'} className={`flex items-center space-x-2 px-3 py-1.5 rounded-sm text-xs transition-all duration-200 border uppercase font-bold tracking-wider ${isCollaborating ? 'bg-green-500/10 text-green-400 border-green-500/50 hover:bg-green-500/20' : 'bg-hgi-card text-hgi-text border-hgi-border hover:border-hgi-orange hover:text-hgi-orange'} ${collabRole === 'guest' ? 'opacity-50 cursor-not-allowed' : ''}`}>
+             <button onClick={startCollaboration} disabled={collabRole === 'guest'} className={`flex items-center space-x-2 px-2 py-1 rounded-sm text-xs transition-all duration-200 border uppercase font-bold tracking-wider ${isCollaborating ? 'bg-green-500/10 text-green-400 border-green-500/50 hover:bg-green-500/20' : 'bg-hgi-card text-hgi-text border-hgi-border hover:border-hgi-orange hover:text-hgi-orange'} ${collabRole === 'guest' ? 'opacity-50 cursor-not-allowed' : ''}`}>
                 {isCollaborating ? <><Users className="w-3 h-3 animate-pulse" /><span>Live ({peerCount})</span></> : <><Share2 className="w-3 h-3" /><span className="hidden sm:inline">Share</span></>}
              </button>
 
