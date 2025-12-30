@@ -28,7 +28,6 @@ const STORAGE_KEY = 'hgi_vibe_builder_artifact_v1';
 function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
@@ -570,19 +569,11 @@ function App() {
     setAuthLoading(true);
 
     try {
-      if (authMode === 'signin') {
-        const { error } = await supabase.auth.signInWithPassword({
-          email: authEmail.trim(),
-          password: authPassword,
-        });
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.auth.signUp({
-          email: authEmail.trim(),
-          password: authPassword,
-        });
-        if (error) throw error;
-      }
+      const { error } = await supabase.auth.signInWithPassword({
+        email: authEmail.trim(),
+        password: authPassword,
+      });
+      if (error) throw error;
     } catch (e: any) {
       setAuthError(e?.message || 'Authentication failed');
     } finally {
@@ -1089,9 +1080,7 @@ function App() {
             </div>
             <div>
               <div className="font-bold text-lg tracking-tight uppercase font-mono">Vibe Builder</div>
-              <div className="text-xs text-hgi-muted font-mono uppercase tracking-wider">
-                {authMode === 'signin' ? 'Iniciar sesión' : 'Crear cuenta'}
-              </div>
+              <div className="text-xs text-hgi-muted font-mono uppercase tracking-wider">Iniciar sesión</div>
             </div>
           </div>
 
@@ -1118,7 +1107,7 @@ function App() {
                 className="w-full bg-hgi-dark border border-hgi-border rounded-sm px-4 py-3 text-hgi-text focus:ring-1 focus:ring-hgi-orange focus:border-hgi-orange outline-none placeholder-hgi-muted/50 font-mono text-sm transition-all duration-200"
                 placeholder="••••••••"
                 required
-                autoComplete={authMode === 'signin' ? 'current-password' : 'new-password'}
+                autoComplete="current-password"
               />
             </div>
 
@@ -1133,21 +1122,11 @@ function App() {
               disabled={authLoading}
               className="w-full p-3 bg-hgi-orange text-black rounded-sm disabled:opacity-50 transition-all duration-200 font-bold hover:bg-hgi-orangeBright hover:shadow-[0_0_15px_rgba(255,79,0,0.5)] active:scale-95"
             >
-              {authMode === 'signin' ? 'Entrar' : 'Crear cuenta'}
+              Entrar
             </button>
           </form>
 
-          <div className="mt-4 flex items-center justify-between text-xs font-mono uppercase tracking-wider text-hgi-muted">
-            <button
-              onClick={() => {
-                setAuthMode((m) => (m === 'signin' ? 'signup' : 'signin'));
-                setAuthError(null);
-              }}
-              className="hover:text-hgi-orange transition-colors"
-              type="button"
-            >
-              {authMode === 'signin' ? 'Crear cuenta' : 'Ya tengo cuenta'}
-            </button>
+          <div className="mt-4 flex items-center justify-end text-xs font-mono uppercase tracking-wider text-hgi-muted">
             <button
               onClick={() => setShowHelpModal(true)}
               className="hover:text-hgi-orange transition-colors"
