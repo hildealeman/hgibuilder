@@ -1,4 +1,3 @@
-
 {
   "name": "hgi-vibe-builder",
   "private": true,
@@ -11,6 +10,7 @@
   },
   "dependencies": {
     "@google/genai": "^1.34.0",
+    "@supabase/supabase-js": "^2.89.0",
     "clsx": "^2.1.0",
     "idb": "^8.0.0",
     "lucide-react": "^0.344.0",

@@ -11,6 +11,8 @@ import { generateAppCode, generateImage, validateCodeEthics } from './services/g
 import { liveSessionInstance } from './services/liveApiService';
 import { collaborationService, SyncPayload } from './services/collaborationService';
 import { storageService } from './src/services/storageService';
+import { supabase } from './src/services/supabaseClient';
+import type { Session } from '@supabase/supabase-js';
 import AppPreview from './components/AppPreview';
 import CodeEditor from './components/CodeEditor';
 import StyleGuide from './components/StyleGuide';
@@ -24,6 +26,16 @@ import { Message, MessageRole, Artifact, AppMode, GenerationConfig, ImageSize } 
 const STORAGE_KEY = 'hgi_vibe_builder_artifact_v1';
 
 function App() {
+  const [session, setSession] = useState<Session | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [dbProjectId, setDbProjectId] = useState<string | null>(null);
+  const [dbSessionId, setDbSessionId] = useState<string | null>(null);
+  const [dbLoading, setDbLoading] = useState(false);
+
   // State
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -85,6 +97,278 @@ function App() {
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const titleBeforeEdit = useRef<Artifact | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const lastPersistedMessageId = useRef<string | null>(null);
+  const artifactSaveTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const initAuth = async () => {
+      try {
+        const { data, error } = await supabase.auth.getSession();
+        if (error) throw error;
+        if (mounted) setSession(data.session);
+      } catch (e: any) {
+        console.error('Supabase getSession failed', e);
+      } finally {
+        if (mounted) setAuthLoading(false);
+      }
+    };
+
+    initAuth();
+
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+    });
+
+    return () => {
+      mounted = false;
+      subscription.subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    const initPersistence = async () => {
+      if (!session) {
+        setDbProjectId(null);
+        setDbSessionId(null);
+        lastPersistedMessageId.current = null;
+        return;
+      }
+
+      setDbLoading(true);
+      try {
+        const ownerId = session.user.id;
+
+        const { data: existingProjects, error: projectsErr } = await supabase
+          .from('hgibuilder_projects')
+          .select('id,title,updated_at')
+          .eq('owner_id', ownerId)
+          .order('updated_at', { ascending: false })
+          .limit(1);
+
+        if (projectsErr) throw projectsErr;
+
+        let projectId = existingProjects?.[0]?.id as string | undefined;
+
+        if (!projectId) {
+          const { data: createdProject, error: createProjectErr } = await supabase
+            .from('hgibuilder_projects')
+            .insert({ owner_id: ownerId, title: currentArtifact.title || 'Untitled App' })
+            .select('id')
+            .single();
+
+          if (createProjectErr) throw createProjectErr;
+          projectId = createdProject.id;
+        }
+
+        setDbProjectId(projectId);
+
+        const { data: existingSessions, error: sessionsErr } = await supabase
+          .from('hgibuilder_sessions')
+          .select(
+            'id,started_at,ended_at,current_artifact_title,current_artifact_version,current_artifact_code'
+          )
+          .eq('owner_id', ownerId)
+          .eq('project_id', projectId)
+          .is('ended_at', null)
+          .order('started_at', { ascending: false })
+          .limit(1);
+
+        if (sessionsErr) throw sessionsErr;
+
+        let sessionId = existingSessions?.[0]?.id as string | undefined;
+
+        if (!sessionId) {
+          const { data: createdSession, error: createSessionErr } = await supabase
+            .from('hgibuilder_sessions')
+            .insert({
+              project_id: projectId,
+              owner_id: ownerId,
+              started_at: new Date().toISOString(),
+              current_artifact_title: currentArtifact.title,
+              current_artifact_version: currentArtifact.version,
+              current_artifact_code: currentArtifact.code,
+            })
+            .select(
+              'id,started_at,ended_at,current_artifact_title,current_artifact_version,current_artifact_code'
+            )
+            .single();
+
+          if (createSessionErr) throw createSessionErr;
+          sessionId = createdSession.id;
+        }
+
+        setDbSessionId(sessionId);
+
+        const { data: loadedSession, error: loadedSessionErr } = await supabase
+          .from('hgibuilder_sessions')
+          .select('current_artifact_title,current_artifact_version,current_artifact_code')
+          .eq('id', sessionId)
+          .single();
+
+        if (loadedSessionErr) throw loadedSessionErr;
+
+        if (loadedSession?.current_artifact_code) {
+          setCurrentArtifact((prev) => ({
+            ...prev,
+            id: sessionId,
+            title: loadedSession.current_artifact_title || prev.title,
+            code: loadedSession.current_artifact_code || prev.code,
+            version:
+              typeof loadedSession.current_artifact_version === 'number'
+                ? loadedSession.current_artifact_version
+                : prev.version,
+            timestamp: Date.now(),
+          }));
+        }
+
+        const { data: loadedMessages, error: messagesErr } = await supabase
+          .from('hgibuilder_messages')
+          .select('id,role,content,image,created_at')
+          .eq('owner_id', ownerId)
+          .eq('session_id', sessionId)
+          .order('created_at', { ascending: true });
+
+        if (messagesErr) throw messagesErr;
+
+        if (loadedMessages && loadedMessages.length > 0) {
+          setMessages(
+            loadedMessages.map((m: any) => ({
+              id: m.id,
+              role: m.role,
+              content: m.content,
+              image: m.image || undefined,
+            }))
+          );
+          lastPersistedMessageId.current = loadedMessages[loadedMessages.length - 1].id;
+        }
+      } catch (e) {
+        console.error('Supabase persistence init failed', e);
+      } finally {
+        setDbLoading(false);
+      }
+    };
+
+    initPersistence();
+  }, [session]);
+
+  useEffect(() => {
+    const persistLatestMessage = async () => {
+      if (!session || !dbSessionId) return;
+      if (collabRole === 'guest') return;
+      if (messages.length === 0) return;
+
+      const last = messages[messages.length - 1];
+      if (!last?.id) return;
+      if (lastPersistedMessageId.current === last.id) return;
+      if (last.id === 'welcome') {
+        lastPersistedMessageId.current = last.id;
+        return;
+      }
+
+      try {
+        const ownerId = session.user.id;
+        const { error } = await supabase.from('hgibuilder_messages').insert({
+          session_id: dbSessionId,
+          owner_id: ownerId,
+          role: last.role,
+          content: last.content,
+          image: last.image || null,
+        });
+
+        if (error) throw error;
+        lastPersistedMessageId.current = last.id;
+      } catch (e) {
+        console.error('Failed to persist message', e);
+      }
+    };
+
+    persistLatestMessage();
+  }, [messages, session, dbSessionId, collabRole]);
+
+  useEffect(() => {
+    const persistArtifact = async () => {
+      if (!session || !dbSessionId || !dbProjectId) return;
+      if (collabRole === 'guest') return;
+      if (!currentArtifact.id || currentArtifact.id === 'init') return;
+
+      try {
+        const now = new Date().toISOString();
+        const { error: sessErr } = await supabase
+          .from('hgibuilder_sessions')
+          .update({
+            current_artifact_title: currentArtifact.title,
+            current_artifact_version: currentArtifact.version,
+            current_artifact_code: currentArtifact.code,
+            updated_at: now,
+          })
+          .eq('id', dbSessionId);
+
+        if (sessErr) throw sessErr;
+
+        const { error: projErr } = await supabase
+          .from('hgibuilder_projects')
+          .update({ title: currentArtifact.title, updated_at: now })
+          .eq('id', dbProjectId);
+
+        if (projErr) throw projErr;
+      } catch (e) {
+        console.error('Failed to persist artifact', e);
+      }
+    };
+
+    if (artifactSaveTimer.current) {
+      window.clearTimeout(artifactSaveTimer.current);
+    }
+
+    artifactSaveTimer.current = window.setTimeout(persistArtifact, 1200);
+
+    return () => {
+      if (artifactSaveTimer.current) {
+        window.clearTimeout(artifactSaveTimer.current);
+      }
+    };
+  }, [currentArtifact, session, dbSessionId, dbProjectId, collabRole]);
+
+  const handleAuthSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    setAuthLoading(true);
+
+    try {
+      if (authMode === 'signin') {
+        const { error } = await supabase.auth.signInWithPassword({
+          email: authEmail.trim(),
+          password: authPassword,
+        });
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.auth.signUp({
+          email: authEmail.trim(),
+          password: authPassword,
+        });
+        if (error) throw error;
+      }
+    } catch (e: any) {
+      setAuthError(e?.message || 'Authentication failed');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    setAuthError(null);
+    setAuthLoading(true);
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+    } catch (e: any) {
+      setAuthError(e?.message || 'Sign out failed');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
 
   // --- COLLABORATION INIT ---
   useEffect(() => {
@@ -555,6 +839,101 @@ function App() {
     );
   };
 
+  if (authLoading) {
+    return (
+      <div className="flex h-screen bg-hgi-dark text-hgi-text font-sans overflow-hidden items-center justify-center">
+        <div className="flex items-center space-x-2 text-hgi-orange animate-pulse px-2">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          <span className="text-sm font-mono uppercase">Cargando…</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div className="flex h-screen bg-hgi-dark text-hgi-text font-sans overflow-hidden items-center justify-center p-6">
+        <div className="w-full max-w-md bg-hgi-card border border-hgi-border rounded-sm shadow-2xl p-6">
+          <div className="flex items-center space-x-3 mb-6">
+            <div className="w-10 h-10 bg-hgi-orange rounded-sm flex items-center justify-center shadow-[0_0_15px_rgba(255,79,0,0.4)]">
+              <span className="font-bold text-black text-sm">HGI</span>
+            </div>
+            <div>
+              <div className="font-bold text-lg tracking-tight uppercase font-mono">Vibe Builder</div>
+              <div className="text-xs text-hgi-muted font-mono uppercase tracking-wider">
+                {authMode === 'signin' ? 'Iniciar sesión' : 'Crear cuenta'}
+              </div>
+            </div>
+          </div>
+
+          <form onSubmit={handleAuthSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-xs font-mono uppercase tracking-wider text-hgi-muted">Email</label>
+              <input
+                type="email"
+                value={authEmail}
+                onChange={(e) => setAuthEmail(e.target.value)}
+                className="w-full bg-hgi-dark border border-hgi-border rounded-sm px-4 py-3 text-hgi-text focus:ring-1 focus:ring-hgi-orange focus:border-hgi-orange outline-none placeholder-hgi-muted/50 font-mono text-sm transition-all duration-200"
+                placeholder="you@example.com"
+                required
+                autoComplete="email"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-mono uppercase tracking-wider text-hgi-muted">Contraseña</label>
+              <input
+                type="password"
+                value={authPassword}
+                onChange={(e) => setAuthPassword(e.target.value)}
+                className="w-full bg-hgi-dark border border-hgi-border rounded-sm px-4 py-3 text-hgi-text focus:ring-1 focus:ring-hgi-orange focus:border-hgi-orange outline-none placeholder-hgi-muted/50 font-mono text-sm transition-all duration-200"
+                placeholder="••••••••"
+                required
+                autoComplete={authMode === 'signin' ? 'current-password' : 'new-password'}
+              />
+            </div>
+
+            {authError && (
+              <div className="text-xs text-red-400 font-mono border border-red-500/30 bg-red-950/20 rounded-sm p-3">
+                {authError}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={authLoading}
+              className="w-full p-3 bg-hgi-orange text-black rounded-sm disabled:opacity-50 transition-all duration-200 font-bold hover:bg-hgi-orangeBright hover:shadow-[0_0_15px_rgba(255,79,0,0.5)] active:scale-95"
+            >
+              {authMode === 'signin' ? 'Entrar' : 'Crear cuenta'}
+            </button>
+          </form>
+
+          <div className="mt-4 flex items-center justify-between text-xs font-mono uppercase tracking-wider text-hgi-muted">
+            <button
+              onClick={() => {
+                setAuthMode((m) => (m === 'signin' ? 'signup' : 'signin'));
+                setAuthError(null);
+              }}
+              className="hover:text-hgi-orange transition-colors"
+              type="button"
+            >
+              {authMode === 'signin' ? 'Crear cuenta' : 'Ya tengo cuenta'}
+            </button>
+            <button
+              onClick={() => setShowHelpModal(true)}
+              className="hover:text-hgi-orange transition-colors"
+              type="button"
+            >
+              Ayuda
+            </button>
+          </div>
+
+          {showHelpModal && <HelpModal onClose={() => setShowHelpModal(false)} />}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen bg-hgi-dark text-hgi-text font-sans overflow-hidden">
       
@@ -672,6 +1051,11 @@ function App() {
           </div>
 
           <div className="flex items-center space-x-4">
+             <button onClick={handleSignOut} className="text-xs font-mono px-2 py-1 rounded-sm border transition-all flex items-center space-x-2 bg-hgi-card text-hgi-text border-hgi-border hover:border-hgi-orange hover:text-hgi-orange">
+               <span>{session.user.email}</span>
+               <span className="text-hgi-muted">/</span>
+               <span>Salir</span>
+             </button>
              {/* Live Share */}
              <button onClick={startCollaboration} disabled={collabRole === 'guest'} className={`flex items-center space-x-2 px-3 py-1.5 rounded-sm text-xs transition-all duration-200 border uppercase font-bold tracking-wider ${isCollaborating ? 'bg-green-500/10 text-green-400 border-green-500/50 hover:bg-green-500/20' : 'bg-hgi-card text-hgi-text border-hgi-border hover:border-hgi-orange hover:text-hgi-orange'} ${collabRole === 'guest' ? 'opacity-50 cursor-not-allowed' : ''}`}>
                 {isCollaborating ? <><Users className="w-3 h-3 animate-pulse" /><span>Live ({peerCount})</span></> : <><Share2 className="w-3 h-3" /><span className="hidden sm:inline">Share</span></>}
