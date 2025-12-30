@@ -595,7 +595,12 @@ function App() {
     setAuthLoading(true);
     try {
       const { error } = await supabase.auth.signOut();
-      if (error) throw error;
+      if (error) {
+        const status = (error as any)?.status;
+        const is403 = status === 403 || `${(error as any)?.message || ''}`.includes('403');
+        if (!is403) throw error;
+        console.warn('Supabase signOut returned 403; clearing local session anyway.', error);
+      }
       setSession(null);
       setShowToolbarMenu(false);
       setShowProjectMenu(false);
