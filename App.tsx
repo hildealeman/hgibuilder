@@ -35,6 +35,7 @@ function App() {
   const [dbProjectId, setDbProjectId] = useState<string | null>(null);
   const [dbSessionId, setDbSessionId] = useState<string | null>(null);
   const [dbLoading, setDbLoading] = useState(false);
+  const [creatingProject, setCreatingProject] = useState(false);
   const [dbProjects, setDbProjects] = useState<Array<{ id: string; title: string; updated_at: string | null }>>([]);
   const [mobileSelectedProjectId, setMobileSelectedProjectId] = useState<string | null>(null);
   const [mobileView, setMobileView] = useState<'gallery' | 'preview'>('gallery');
@@ -283,7 +284,8 @@ function App() {
     if (!session) return;
     if (collabRole === 'guest') return;
     setShowProjectMenu(false);
-    setDbLoading(true);
+    if (creatingProject) return;
+    setCreatingProject(true);
     try {
       const ownerId = session.user.id;
       const { data: createdProject, error: createProjectErr } = await supabase
@@ -307,7 +309,7 @@ function App() {
     } catch (e) {
       console.error('Failed to create project', e);
     } finally {
-      setDbLoading(false);
+      setCreatingProject(false);
     }
   };
 
@@ -1189,7 +1191,7 @@ function App() {
         <div className="absolute inset-0 pointer-events-none bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5"></div>
         
         {/* Toolbar */}
-        <div className="h-12 border-b border-hgi-border bg-hgi-dark flex items-center justify-between gap-2 px-3 z-10 min-w-0 overflow-visible">
+        <div className="h-12 border-b border-hgi-border bg-hgi-dark flex items-center justify-between gap-2 px-3 z-[50] min-w-0 overflow-visible">
           
           <div className="flex items-center space-x-4 min-w-0 flex-1">
              <div className="relative" ref={projectMenuRef}>
@@ -1227,7 +1229,7 @@ function App() {
                    <div className="p-2 border-t border-hgi-border">
                      <button
                        onClick={handleCreateNewProject}
-                       disabled={dbLoading || collabRole === 'guest'}
+                       disabled={creatingProject || collabRole === 'guest'}
                        className="w-full flex items-center justify-between p-2 rounded-sm hover:bg-hgi-dark transition-colors disabled:opacity-50"
                      >
                        <span className="text-xs font-mono uppercase tracking-wider text-hgi-text">Nuevo Proyecto</span>
@@ -1281,6 +1283,53 @@ function App() {
                  <div className="absolute top-full right-0 mt-2 w-72 bg-hgi-card border border-hgi-border rounded-sm shadow-xl z-[9999] overflow-hidden">
                    <div className="p-2 border-b border-hgi-border text-[10px] text-hgi-muted font-mono uppercase">Acciones</div>
                    <div className="p-2 space-y-1">
+                    <button
+                      onClick={() => {
+                        setShowToolbarMenu(false);
+                        startCollaboration();
+                      }}
+                      disabled={collabRole === 'guest'}
+                      className="w-full flex items-center justify-between p-2 rounded-sm hover:bg-hgi-dark transition-colors disabled:opacity-50"
+                    >
+                      <span className="text-xs font-mono uppercase tracking-wider text-hgi-text">Share</span>
+                      <Share2 className="w-4 h-4 text-hgi-muted" />
+                    </button>
+
+                    <div className="px-2 py-1 text-[10px] text-hgi-muted font-mono uppercase tracking-wider flex items-center justify-between">
+                      <span>Guardado</span>
+                      <span className="text-hgi-text/80">{lastSavedTime || '—'}</span>
+                    </div>
+
+                    {history.length > 0 && (
+                      <div className="pt-2 mt-2 border-t border-hgi-border">
+                        <div className="px-2 pb-2 text-[10px] text-hgi-muted font-mono uppercase tracking-wider">Versiones</div>
+                        <div className="max-h-56 overflow-y-auto">
+                          {[...history]
+                            .slice(-8)
+                            .reverse()
+                            .map((histItem, idx) => (
+                              <button
+                                key={idx}
+                                onClick={() => {
+                                  setShowToolbarMenu(false);
+                                  handleRestoreVersion(histItem);
+                                }}
+                                className="w-full text-left p-2 rounded-sm hover:bg-hgi-dark transition-colors"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs font-mono text-hgi-orange font-bold">v{histItem.version}</span>
+                                  <span className="text-[10px] text-hgi-muted flex items-center space-x-1">
+                                    <Clock className="w-2.5 h-2.5" />
+                                    <span>{histItem.timestamp ? new Date(histItem.timestamp).toLocaleTimeString() : ''}</span>
+                                  </span>
+                                </div>
+                                <div className="text-[10px] text-hgi-muted truncate">{histItem.title}</div>
+                              </button>
+                            ))}
+                        </div>
+                      </div>
+                    )}
+
                      {!isLearningMode && (
                        <button
                          onClick={() => {
@@ -1381,15 +1430,15 @@ function App() {
                <span>Salir</span>
              </button>
              {/* Live Share */}
-             <button onClick={startCollaboration} disabled={collabRole === 'guest'} className={`flex items-center space-x-2 px-2 py-1 rounded-sm text-xs transition-all duration-200 border uppercase font-bold tracking-wider ${isCollaborating ? 'bg-green-500/10 text-green-400 border-green-500/50 hover:bg-green-500/20' : 'bg-hgi-card text-hgi-text border-hgi-border hover:border-hgi-orange hover:text-hgi-orange'} ${collabRole === 'guest' ? 'opacity-50 cursor-not-allowed' : ''}`}>
+             <button onClick={startCollaboration} disabled={collabRole === 'guest'} className={`hidden flex items-center space-x-2 px-2 py-1 rounded-sm text-xs transition-all duration-200 border uppercase font-bold tracking-wider ${isCollaborating ? 'bg-green-500/10 text-green-400 border-green-500/50 hover:bg-green-500/20' : 'bg-hgi-card text-hgi-text border-hgi-border hover:border-hgi-orange hover:text-hgi-orange'} ${collabRole === 'guest' ? 'opacity-50 cursor-not-allowed' : ''}`}>
                 {isCollaborating ? <><Users className="w-3 h-3 animate-pulse" /><span>Live ({peerCount})</span></> : <><Share2 className="w-3 h-3" /><span className="hidden sm:inline">Share</span></>}
              </button>
 
-             {lastSavedTime && <span className="text-xs text-hgi-muted font-mono hidden xl:block">Guardado: {lastSavedTime}</span>}
+             {lastSavedTime && <span className="hidden text-xs text-hgi-muted font-mono hidden xl:block">Guardado: {lastSavedTime}</span>}
              {hasSavedState && <button onClick={handleRestore} disabled={collabRole === 'guest'} className="flex items-center space-x-2 px-3 py-1.5 rounded-sm text-xs text-yellow-500 transition-all duration-200 border border-transparent hover:bg-yellow-500/10 hover:border-yellow-500/30 disabled:opacity-50 hidden 2xl:flex"><RotateCcw className="w-3 h-3" /></button>}
 
              {/* History Dropdown */}
-             <div className="relative hidden 2xl:block">
+             <div className="relative hidden">
                 <button onClick={() => history.length > 0 && setShowHistoryDropdown(!showHistoryDropdown)} className={`text-xs font-mono px-2 py-1 rounded-sm border transition-all flex items-center space-x-2 ${history.length > 0 ? 'bg-hgi-card text-hgi-text border-hgi-border hover:border-hgi-orange cursor-pointer' : 'bg-hgi-card/50 text-hgi-muted border-hgi-border cursor-default'}`}><History className="w-3 h-3" /><span>v{currentArtifact.version}</span></button>
                 {showHistoryDropdown && history.length > 0 && (
                   <div className="absolute top-full right-0 mt-2 w-64 bg-hgi-card border border-hgi-border rounded-sm shadow-xl z-50 overflow-hidden">
@@ -1424,7 +1473,7 @@ function App() {
         </div>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-hidden relative z-10 flex">
+        <div className="flex-1 overflow-hidden relative z-0 flex">
           {isMobile && (
             <div className="flex-1 h-full p-4">
               {mobileView === 'gallery' ? (
