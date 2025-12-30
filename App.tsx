@@ -10,6 +10,7 @@ import {
 import { generateAppCode, generateImage, validateCodeEthics } from './services/geminiService';
 import { liveSessionInstance } from './services/liveApiService';
 import { collaborationService, SyncPayload } from './services/collaborationService';
+import { storageService } from './src/services/storageService';
 import AppPreview from './components/AppPreview';
 import CodeEditor from './components/CodeEditor';
 import StyleGuide from './components/StyleGuide';
@@ -439,6 +440,7 @@ function App() {
       setIsLiveActive(false);
     } else {
       try {
+        const liveApiKey = storageService.getSessionSecret('live_api_key') || undefined;
         await liveSessionInstance.start(
           {
             onOpen: () => setIsLiveActive(true),
@@ -472,7 +474,8 @@ function App() {
           {
             code: currentArtifact.code,
             history: messages
-          }
+          },
+          liveApiKey
         );
       } catch (e) {
         console.error("Failed to start live session", e);

@@ -34,17 +34,15 @@ export class LiveSession {
     // Client initialized in start() to ensure API_KEY is available
   }
 
-  async start(callbacks: LiveSessionCallbacks, context: SessionContext) {
+  async start(callbacks: LiveSessionCallbacks, context: SessionContext, apiKey?: string) {
     if (this.active) return;
     
-    // Initialize AI client here to avoid race conditions with API Key selection
-    // Ensure API_KEY exists
-    if (!process.env.API_KEY) {
-        console.error("API_KEY is missing");
-        callbacks.onError(new Error("API Key missing"));
-        return;
+    if (!apiKey) {
+      console.error("API_KEY is missing");
+      callbacks.onError(new Error("API Key missing"));
+      return;
     }
-    this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    this.ai = new GoogleGenAI({ apiKey });
 
     // Reset Audio Contexts
     try {

@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { X, Settings, Thermometer, Cpu, Zap, Package, Plus } from 'lucide-react';
 import { GenerationConfig } from '../types';
+import { storageService } from '../src/services/storageService';
 
 interface SettingsModalProps {
   config: GenerationConfig;
@@ -20,6 +21,7 @@ const PRESET_LIBRARIES = [
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ config, setConfig, onClose }) => {
   const [customDep, setCustomDep] = useState('');
+  const [liveApiKey, setLiveApiKey] = useState(storageService.getSessionSecret('live_api_key') || '');
 
   const models = [
     { id: 'gemini-3-flash-preview', name: 'Gemini 3.0 Flash', desc: 'Rápido, eficiente y baja latencia. Ideal para prototipado rápido.' },
@@ -62,6 +64,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ config, setConfig, onClos
        ...prev,
        dependencies: prev.dependencies.filter(d => d !== url)
      }));
+  };
+
+  const handleSaveLiveKey = () => {
+    storageService.setSessionSecret('live_api_key', liveApiKey.trim());
   };
 
   return (
@@ -202,6 +208,30 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ config, setConfig, onClos
                  </ul>
                </div>
              )}
+          </div>
+
+          <div className="space-y-3 pt-4 border-t border-hgi-border/30">
+            <div className="flex items-center space-x-2 text-hgi-orange">
+              <Cpu className="w-4 h-4" />
+              <label className="text-xs font-bold font-mono uppercase tracking-widest">Live (Mic) API Key</label>
+            </div>
+
+            <input
+              type="password"
+              value={liveApiKey}
+              onChange={(e) => setLiveApiKey(e.target.value)}
+              placeholder="Pega tu API key para Live (solo se guarda en esta pestaña)"
+              className="w-full bg-hgi-dark border border-hgi-border rounded-sm px-3 py-2 text-hgi-text focus:ring-1 focus:ring-hgi-orange outline-none font-mono text-xs"
+            />
+
+            <div className="flex justify-end">
+              <button
+                onClick={handleSaveLiveKey}
+                className="px-4 py-2 bg-hgi-card border border-hgi-border hover:bg-hgi-dark hover:text-hgi-orange transition-colors rounded-sm text-xs font-bold uppercase tracking-wider"
+              >
+                Guardar
+              </button>
+            </div>
           </div>
 
         </div>

@@ -295,7 +295,7 @@ const AppPreview: React.FC<AppPreviewProps> = ({ code }) => {
               srcDoc={fullSrcDoc}
               title="App Preview Desktop"
               className="w-full h-full"
-              sandbox="allow-scripts allow-modals allow-same-origin allow-forms"
+              sandbox="allow-scripts allow-modals allow-forms"
             />
           </div>
         ) : (
@@ -314,7 +314,7 @@ const AppPreview: React.FC<AppPreviewProps> = ({ code }) => {
                   srcDoc={fullSrcDoc}
                   title="App Preview Mobile"
                   className="w-full h-full"
-                  sandbox="allow-scripts allow-modals allow-same-origin allow-forms"
+                  sandbox="allow-scripts allow-modals allow-forms"
                 />
               </div>
               <div className="absolute bottom-2 left-1/2 -translate-x-1/2 w-32 h-1 bg-white/20 rounded-full z-20 pointer-events-none"></div>
