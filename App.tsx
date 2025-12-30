@@ -1294,14 +1294,14 @@ function App() {
             </div>
 
             {/* Undo/Redo */}
-            <div className={`flex bg-hgi-card p-1 rounded-sm border border-hgi-border space-x-1 ${(collabRole === 'guest' || isLearningMode) ? 'opacity-50 pointer-events-none' : ''}`}>
+            <div className={`hidden flex bg-hgi-card p-1 rounded-sm border border-hgi-border space-x-1 ${(collabRole === 'guest' || isLearningMode) ? 'opacity-50 pointer-events-none' : ''}`}>
               <button onClick={performUndo} disabled={undoStack.length === 0} className="p-1.5 text-hgi-muted hover:text-hgi-text hover:bg-hgi-dark rounded-sm disabled:opacity-30 transition-all"><Undo2 className="w-4 h-4" /></button>
               <div className="w-px h-full bg-hgi-border/50 mx-1"></div>
               <button onClick={performRedo} disabled={redoStack.length === 0} className="p-1.5 text-hgi-muted hover:text-hgi-text hover:bg-hgi-dark rounded-sm disabled:opacity-30 transition-all"><Redo2 className="w-4 h-4" /></button>
             </div>
             
             {!isLearningMode && (
-              <button onClick={handleEthicsAudit} disabled={!currentArtifact.code || collabRole === 'guest'} className={`p-2 rounded-sm transition-all duration-200 border border-transparent ${currentArtifact.code ? 'text-hgi-muted hover:text-green-400 hover:bg-hgi-card hover:border-green-400/30' : 'text-hgi-border cursor-not-allowed'} hidden 2xl:block`}><ShieldCheck className="w-4 h-4" /></button>
+              <button onClick={handleEthicsAudit} disabled={!currentArtifact.code || collabRole === 'guest'} className={`hidden p-2 rounded-sm transition-all duration-200 border border-transparent ${currentArtifact.code ? 'text-hgi-muted hover:text-green-400 hover:bg-hgi-card hover:border-green-400/30' : 'text-hgi-border cursor-not-allowed'} hidden 2xl:block`}><ShieldCheck className="w-4 h-4" /></button>
             )}
           </div>
 
@@ -1336,6 +1336,31 @@ function App() {
                     <div className="px-2 py-1 text-[10px] text-hgi-muted font-mono uppercase tracking-wider flex items-center justify-between">
                       <span>Guardado</span>
                       <span className="text-hgi-text/80">{lastSavedTime || '—'}</span>
+                    </div>
+
+                    <div className="pt-2 mt-2 border-t border-hgi-border space-y-1">
+                      <button
+                        onClick={() => {
+                          setShowToolbarMenu(false);
+                          performUndo();
+                        }}
+                        disabled={undoStack.length === 0 || collabRole === 'guest' || isLearningMode}
+                        className="w-full flex items-center justify-between p-2 rounded-sm hover:bg-hgi-dark transition-colors disabled:opacity-50"
+                      >
+                        <span className="text-xs font-mono uppercase tracking-wider text-hgi-text">Undo</span>
+                        <Undo2 className="w-4 h-4 text-hgi-muted" />
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowToolbarMenu(false);
+                          performRedo();
+                        }}
+                        disabled={redoStack.length === 0 || collabRole === 'guest' || isLearningMode}
+                        className="w-full flex items-center justify-between p-2 rounded-sm hover:bg-hgi-dark transition-colors disabled:opacity-50"
+                      >
+                        <span className="text-xs font-mono uppercase tracking-wider text-hgi-text">Redo</span>
+                        <Redo2 className="w-4 h-4 text-hgi-muted" />
+                      </button>
                     </div>
 
                     {history.length > 0 && (
