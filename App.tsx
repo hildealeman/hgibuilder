@@ -1042,7 +1042,7 @@ function App() {
   }
 
   return (
-    <div className="flex flex-col md:flex-row h-screen bg-hgi-dark text-hgi-text font-sans overflow-hidden">
+    <div className="flex flex-col md:flex-row h-screen bg-hgi-dark text-hgi-text font-sans overflow-hidden overflow-x-hidden">
       
       {/* Left Panel: Chat & Controls */}
       <div className="hidden md:flex md:w-2/5 lg:w-1/3 flex-col border-r border-hgi-border bg-hgi-dark/95 backdrop-blur">
@@ -1130,13 +1130,13 @@ function App() {
         <div className="absolute inset-0 pointer-events-none bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5"></div>
         
         {/* Toolbar */}
-        <div className="h-14 border-b border-hgi-border bg-hgi-dark flex items-center justify-between px-4 z-10">
+        <div className="h-14 border-b border-hgi-border bg-hgi-dark flex items-center justify-between gap-2 px-4 z-10 min-w-0 overflow-x-hidden">
           
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-4 min-w-0 flex-1">
              {/* Title Input */}
              <div className="flex items-center space-x-2 group">
                 <Pencil className="w-3 h-3 text-hgi-muted group-hover:text-hgi-orange transition-colors" />
-                <input type="text" value={currentArtifact.title} disabled={collabRole === 'guest' || isLearningMode} onFocus={() => { titleBeforeEdit.current = { ...currentArtifact }; }} onBlur={() => { if (titleBeforeEdit.current && titleBeforeEdit.current.title !== currentArtifact.title) { saveToUndo(titleBeforeEdit.current); titleBeforeEdit.current = null; }}} onChange={(e) => setCurrentArtifact(prev => ({ ...prev, title: e.target.value, id: prev.id === 'init' ? Date.now().toString() : prev.id }))} className="bg-transparent text-hgi-text font-bold text-sm outline-none border-b border-transparent focus:border-hgi-orange hover:border-hgi-border transition-all w-40 sm:w-64 placeholder-hgi-muted/30 disabled:opacity-70 disabled:cursor-not-allowed" placeholder="Nombre del Proyecto" />
+                <input type="text" value={currentArtifact.title} disabled={collabRole === 'guest' || isLearningMode} onFocus={() => { titleBeforeEdit.current = { ...currentArtifact }; }} onBlur={() => { if (titleBeforeEdit.current && titleBeforeEdit.current.title !== currentArtifact.title) { saveToUndo(titleBeforeEdit.current); titleBeforeEdit.current = null; }}} onChange={(e) => setCurrentArtifact(prev => ({ ...prev, title: e.target.value, id: prev.id === 'init' ? Date.now().toString() : prev.id }))} className="bg-transparent text-hgi-text font-bold text-sm outline-none border-b border-transparent focus:border-hgi-orange hover:border-hgi-border transition-all w-32 sm:w-48 md:w-64 placeholder-hgi-muted/30 disabled:opacity-70 disabled:cursor-not-allowed" placeholder="Nombre del Proyecto" />
              </div>
              
              <div className="h-4 w-px bg-hgi-border/50 hidden sm:block"></div>
@@ -1161,15 +1161,15 @@ function App() {
             )}
           </div>
 
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center justify-end flex-wrap gap-2 min-w-0">
              <button onClick={toggleLiveSession} className={`p-2 rounded-sm transition-all duration-200 border ${isLiveActive ? 'bg-cyan-600 border-cyan-500 text-white shadow-[0_0_15px_rgba(6,182,212,0.4)] hover:bg-cyan-500' : 'bg-hgi-card border-hgi-border text-hgi-muted hover:text-cyan-400 hover:border-cyan-400/50'}`}><Mic className="w-4 h-4" /></button>
              {isLiveActive && liveContextStale && (
                <button onClick={handleRefreshLiveContext} className="text-xs font-mono px-2 py-1 rounded-sm border transition-all flex items-center space-x-2 bg-cyan-950/20 text-cyan-300 border-cyan-500/40 hover:border-cyan-400 hover:text-cyan-200">
                  <span>Refresh</span>
                </button>
              )}
-             <button onClick={handleSignOut} className="text-xs font-mono px-2 py-1 rounded-sm border transition-all flex items-center space-x-2 bg-hgi-card text-hgi-text border-hgi-border hover:border-hgi-orange hover:text-hgi-orange">
-               <span>{session.user.email}</span>
+             <button onClick={handleSignOut} className="text-xs font-mono px-2 py-1 rounded-sm border transition-all flex items-center space-x-2 bg-hgi-card text-hgi-text border-hgi-border hover:border-hgi-orange hover:text-hgi-orange max-w-[220px] min-w-0">
+               <span className="truncate min-w-0">{session.user.email}</span>
                <span className="text-hgi-muted">/</span>
                <span>Salir</span>
              </button>
