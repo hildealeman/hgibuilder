@@ -5,7 +5,7 @@ import {
   Monitor, Activity, RotateCcw, Save, Pencil,
   ArrowDownToLine, MessageSquare, History, Clock,
   ShieldCheck, Palette, Github, HelpCircle, Settings,
-  Undo2, Redo2, Layout, X, Paperclip, Share2, Users, Link as LinkIcon, Rocket
+  Undo2, Redo2, Layout, X, Paperclip, Share2, Users, Link as LinkIcon, Rocket, MoreHorizontal
 } from 'lucide-react';
 import { generateAppCode, generateImage, validateCodeEthics } from './services/geminiService';
 import { liveSessionInstance } from './services/liveApiService';
@@ -88,6 +88,7 @@ function App() {
   const [viewMode, setViewMode] = useState<AppMode>(AppMode.PREVIEW);
   const [hasSavedState, setHasSavedState] = useState(false);
   const [lastSavedTime, setLastSavedTime] = useState<string | null>(null);
+  const [showToolbarMenu, setShowToolbarMenu] = useState(false);
   
   // Config State
   const [config, setConfig] = useState<GenerationConfig>({
@@ -106,6 +107,19 @@ function App() {
   const lastPersistedMessageId = useRef<string | null>(null);
   const artifactSaveTimer = useRef<number | null>(null);
   const liveContextFingerprint = useRef<string | null>(null);
+  const toolbarMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showToolbarMenu) return;
+    const onMouseDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (toolbarMenuRef.current && !toolbarMenuRef.current.contains(target)) {
+        setShowToolbarMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [showToolbarMenu]);
 
   useEffect(() => {
     let mounted = true;
@@ -1157,7 +1171,7 @@ function App() {
             </div>
             
             {!isLearningMode && (
-              <button onClick={handleEthicsAudit} disabled={!currentArtifact.code || collabRole === 'guest'} className={`p-2 rounded-sm transition-all duration-200 border border-transparent ${currentArtifact.code ? 'text-hgi-muted hover:text-green-400 hover:bg-hgi-card hover:border-green-400/30' : 'text-hgi-border cursor-not-allowed'}`}><ShieldCheck className="w-4 h-4" /></button>
+              <button onClick={handleEthicsAudit} disabled={!currentArtifact.code || collabRole === 'guest'} className={`p-2 rounded-sm transition-all duration-200 border border-transparent ${currentArtifact.code ? 'text-hgi-muted hover:text-green-400 hover:bg-hgi-card hover:border-green-400/30' : 'text-hgi-border cursor-not-allowed'} hidden 2xl:block`}><ShieldCheck className="w-4 h-4" /></button>
             )}
           </div>
 
@@ -1168,6 +1182,109 @@ function App() {
                  <span>Refresh</span>
                </button>
              )}
+
+             <div className="relative" ref={toolbarMenuRef}>
+               <button onClick={() => setShowToolbarMenu((v) => !v)} className="p-2 rounded-sm transition-all duration-200 border bg-hgi-card border-hgi-border text-hgi-muted hover:text-hgi-text hover:border-hgi-orange">
+                 <MoreHorizontal className="w-4 h-4" />
+               </button>
+               {showToolbarMenu && (
+                 <div className="absolute top-full right-0 mt-2 w-72 bg-hgi-card border border-hgi-border rounded-sm shadow-xl z-50 overflow-hidden">
+                   <div className="p-2 border-b border-hgi-border text-[10px] text-hgi-muted font-mono uppercase">Acciones</div>
+                   <div className="p-2 space-y-1">
+                     {!isLearningMode && (
+                       <button
+                         onClick={() => {
+                           setShowToolbarMenu(false);
+                           setShowSnippetLibrary(!showSnippetLibrary);
+                         }}
+                         className="w-full flex items-center justify-between p-2 rounded-sm hover:bg-hgi-dark transition-colors"
+                       >
+                         <span className="text-xs font-mono uppercase tracking-wider text-hgi-text">Snippets</span>
+                         <Layout className="w-4 h-4 text-hgi-muted" />
+                       </button>
+                     )}
+
+                     {!isLearningMode && (
+                       <button
+                         onClick={() => {
+                           setShowToolbarMenu(false);
+                           handleEthicsAudit();
+                         }}
+                         disabled={!currentArtifact.code || collabRole === 'guest'}
+                         className="w-full flex items-center justify-between p-2 rounded-sm hover:bg-hgi-dark transition-colors disabled:opacity-50"
+                       >
+                         <span className="text-xs font-mono uppercase tracking-wider text-hgi-text">Auditoría</span>
+                         <ShieldCheck className="w-4 h-4 text-hgi-muted" />
+                       </button>
+                     )}
+
+                     <button
+                       onClick={() => {
+                         setShowToolbarMenu(false);
+                         if (history.length > 0) setShowHistoryDropdown(!showHistoryDropdown);
+                       }}
+                       className="w-full flex items-center justify-between p-2 rounded-sm hover:bg-hgi-dark transition-colors"
+                     >
+                       <span className="text-xs font-mono uppercase tracking-wider text-hgi-text">Historial</span>
+                       <History className="w-4 h-4 text-hgi-muted" />
+                     </button>
+
+                     {hasSavedState && (
+                       <button
+                         onClick={() => {
+                           setShowToolbarMenu(false);
+                           handleRestore();
+                         }}
+                         disabled={collabRole === 'guest'}
+                         className="w-full flex items-center justify-between p-2 rounded-sm hover:bg-hgi-dark transition-colors disabled:opacity-50"
+                       >
+                         <span className="text-xs font-mono uppercase tracking-wider text-hgi-text">Restaurar</span>
+                         <RotateCcw className="w-4 h-4 text-hgi-muted" />
+                       </button>
+                     )}
+
+                     {!isLearningMode && (
+                       <div className="pt-2 mt-2 border-t border-hgi-border space-y-1">
+                         <button
+                           onClick={() => {
+                             setShowToolbarMenu(false);
+                             setShowGitModal(true);
+                           }}
+                           disabled={!currentArtifact.code}
+                           className="w-full flex items-center justify-between p-2 rounded-sm hover:bg-hgi-dark transition-colors disabled:opacity-50"
+                         >
+                           <span className="text-xs font-mono uppercase tracking-wider text-hgi-text">Exportar Git</span>
+                           <Github className="w-4 h-4 text-hgi-muted" />
+                         </button>
+                         <button
+                           onClick={() => {
+                             setShowToolbarMenu(false);
+                             setShowPublishModal(true);
+                           }}
+                           disabled={!currentArtifact.code}
+                           className="w-full flex items-center justify-between p-2 rounded-sm hover:bg-hgi-dark transition-colors disabled:opacity-50"
+                         >
+                           <span className="text-xs font-mono uppercase tracking-wider text-hgi-text">Publicar</span>
+                           <Rocket className="w-4 h-4 text-hgi-muted" />
+                         </button>
+                       </div>
+                     )}
+
+                     <button
+                       onClick={() => {
+                         setShowToolbarMenu(false);
+                         handleDownload();
+                       }}
+                       className="w-full flex items-center justify-between p-2 rounded-sm hover:bg-hgi-dark transition-colors"
+                     >
+                       <span className="text-xs font-mono uppercase tracking-wider text-hgi-text">Descargar</span>
+                       <Download className="w-4 h-4 text-hgi-muted" />
+                     </button>
+                   </div>
+                 </div>
+               )}
+             </div>
+
              <button onClick={handleSignOut} className="text-xs font-mono px-2 py-1 rounded-sm border transition-all flex items-center space-x-2 bg-hgi-card text-hgi-text border-hgi-border hover:border-hgi-orange hover:text-hgi-orange max-w-[220px] min-w-0">
                <span className="truncate min-w-0">{session.user.email}</span>
                <span className="text-hgi-muted">/</span>
@@ -1179,10 +1296,10 @@ function App() {
              </button>
 
              {lastSavedTime && <span className="text-xs text-hgi-muted font-mono hidden xl:block">Guardado: {lastSavedTime}</span>}
-             {hasSavedState && <button onClick={handleRestore} disabled={collabRole === 'guest'} className="flex items-center space-x-2 px-3 py-1.5 rounded-sm text-xs text-yellow-500 transition-all duration-200 border border-transparent hover:bg-yellow-500/10 hover:border-yellow-500/30 disabled:opacity-50"><RotateCcw className="w-3 h-3" /></button>}
+             {hasSavedState && <button onClick={handleRestore} disabled={collabRole === 'guest'} className="flex items-center space-x-2 px-3 py-1.5 rounded-sm text-xs text-yellow-500 transition-all duration-200 border border-transparent hover:bg-yellow-500/10 hover:border-yellow-500/30 disabled:opacity-50 hidden 2xl:flex"><RotateCcw className="w-3 h-3" /></button>}
 
              {/* History Dropdown */}
-             <div className="relative">
+             <div className="relative hidden 2xl:block">
                 <button onClick={() => history.length > 0 && setShowHistoryDropdown(!showHistoryDropdown)} className={`text-xs font-mono px-2 py-1 rounded-sm border transition-all flex items-center space-x-2 ${history.length > 0 ? 'bg-hgi-card text-hgi-text border-hgi-border hover:border-hgi-orange cursor-pointer' : 'bg-hgi-card/50 text-hgi-muted border-hgi-border cursor-default'}`}><History className="w-3 h-3" /><span>v{currentArtifact.version}</span></button>
                 {showHistoryDropdown && history.length > 0 && (
                   <div className="absolute top-full right-0 mt-2 w-64 bg-hgi-card border border-hgi-border rounded-sm shadow-xl z-50 overflow-hidden">
@@ -1200,19 +1317,19 @@ function App() {
              </div>
 
              {!isLearningMode && (
-               <button onClick={() => setShowSnippetLibrary(!showSnippetLibrary)} className={`flex items-center space-x-2 px-3 py-1.5 rounded-sm text-xs transition-all duration-200 border border-hgi-border uppercase font-bold tracking-wider ${showSnippetLibrary ? 'bg-hgi-card text-hgi-orange border-hgi-orange shadow-[0_0_10px_rgba(255,79,0,0.2)]' : 'bg-hgi-dark text-hgi-muted hover:text-hgi-text hover:bg-hgi-card'}`}><Layout className="w-3 h-3" /></button>
+               <button onClick={() => setShowSnippetLibrary(!showSnippetLibrary)} className={`flex items-center space-x-2 px-3 py-1.5 rounded-sm text-xs transition-all duration-200 border border-hgi-border uppercase font-bold tracking-wider ${showSnippetLibrary ? 'bg-hgi-card text-hgi-orange border-hgi-orange shadow-[0_0_10px_rgba(255,79,0,0.2)]' : 'bg-hgi-dark text-hgi-muted hover:text-hgi-text hover:bg-hgi-card'} hidden 2xl:flex`}><Layout className="w-3 h-3" /></button>
              )}
 
              {/* Git & Publish Actions */}
              {!isLearningMode && (
-             <div className="flex bg-hgi-card p-1 rounded-sm border border-hgi-border space-x-1">
+             <div className="flex bg-hgi-card p-1 rounded-sm border border-hgi-border space-x-1 hidden 2xl:flex">
                 <button onClick={() => setShowGitModal(true)} disabled={!currentArtifact.code} className={`p-1.5 rounded-sm transition-all duration-200 ${currentArtifact.code ? 'text-hgi-text hover:bg-hgi-dark hover:text-hgi-orange' : 'text-hgi-muted opacity-50 cursor-not-allowed'}`} title="Exportar a Git"><Github className="w-4 h-4" /></button>
                 <div className="w-px h-full bg-hgi-border/50"></div>
                 <button onClick={() => setShowPublishModal(true)} disabled={!currentArtifact.code} className={`p-1.5 rounded-sm transition-all duration-200 ${currentArtifact.code ? 'text-hgi-text hover:bg-hgi-dark hover:text-hgi-orange' : 'text-hgi-muted opacity-50 cursor-not-allowed'}`} title="Publicar App"><Rocket className="w-4 h-4" /></button>
              </div>
              )}
 
-             <button onClick={handleDownload} className="flex items-center space-x-2 px-3 py-1.5 bg-hgi-card rounded-sm text-xs text-hgi-text transition-all duration-200 border border-hgi-border uppercase font-bold tracking-wider hover:border-hgi-orange hover:text-hgi-orange hover:shadow-[0_0_10px_rgba(255,79,0,0.2)]"><Download className="w-3 h-3" /></button>
+             <button onClick={handleDownload} className="flex items-center space-x-2 px-3 py-1.5 bg-hgi-card rounded-sm text-xs text-hgi-text transition-all duration-200 border border-hgi-border uppercase font-bold tracking-wider hover:border-hgi-orange hover:text-hgi-orange hover:shadow-[0_0_10px_rgba(255,79,0,0.2)] hidden 2xl:flex"><Download className="w-3 h-3" /></button>
           </div>
         </div>
 
