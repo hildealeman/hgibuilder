@@ -249,19 +249,20 @@ function App() {
 
       if (loadedSessionErr) throw loadedSessionErr;
 
-      if (loadedSession?.current_artifact_code) {
-        setCurrentArtifact((prev) => ({
-          ...prev,
-          id: sessionId,
-          title: loadedSession.current_artifact_title || prev.title,
-          code: loadedSession.current_artifact_code || prev.code,
-          version:
-            typeof loadedSession.current_artifact_version === 'number'
-              ? loadedSession.current_artifact_version
-              : prev.version,
-          timestamp: Date.now(),
-        }));
-      }
+      setCurrentArtifact((prev) => ({
+        ...prev,
+        id: sessionId,
+        title: loadedSession?.current_artifact_title || prev.title,
+        code:
+          typeof loadedSession?.current_artifact_code === 'string'
+            ? loadedSession.current_artifact_code
+            : prev.code,
+        version:
+          typeof loadedSession?.current_artifact_version === 'number'
+            ? loadedSession.current_artifact_version
+            : prev.version,
+        timestamp: Date.now(),
+      }));
 
       const { data: loadedMessages, error: messagesErr } = await supabase
         .from('hgibuilder_messages')
@@ -478,6 +479,8 @@ function App() {
           .eq('id', dbProjectId);
 
         if (projErr) throw projErr;
+        setHasSavedState(true);
+        setLastSavedTime(new Date().toLocaleTimeString());
       } catch (e) {
         console.error('Failed to persist artifact', e);
       }
@@ -1493,12 +1496,12 @@ function App() {
                <span>Salir</span>
              </button>
              {/* Live Share */}
-             <button onClick={startCollaboration} disabled={collabRole === 'guest'} className={`hidden flex items-center space-x-2 px-2 py-1 rounded-sm text-xs transition-all duration-200 border uppercase font-bold tracking-wider ${isCollaborating ? 'bg-green-500/10 text-green-400 border-green-500/50 hover:bg-green-500/20' : 'bg-hgi-card text-hgi-text border-hgi-border hover:border-hgi-orange hover:text-hgi-orange'} ${collabRole === 'guest' ? 'opacity-50 cursor-not-allowed' : ''}`}>
+             <button onClick={startCollaboration} disabled={collabRole === 'guest'} className="hidden">
                 {isCollaborating ? <><Users className="w-3 h-3 animate-pulse" /><span>Live ({peerCount})</span></> : <><Share2 className="w-3 h-3" /><span className="hidden sm:inline">Share</span></>}
              </button>
 
              {lastSavedTime && <span className="hidden text-xs text-hgi-muted font-mono hidden xl:block">Guardado: {lastSavedTime}</span>}
-             {hasSavedState && <button onClick={handleRestore} disabled={collabRole === 'guest'} className="hidden flex items-center space-x-2 px-3 py-1.5 rounded-sm text-xs text-yellow-500 transition-all duration-200 border border-transparent hover:bg-yellow-500/10 hover:border-yellow-500/30 disabled:opacity-50 hidden 2xl:flex"><RotateCcw className="w-3 h-3" /></button>}
+             {hasSavedState && <button onClick={handleRestore} disabled={collabRole === 'guest'} className="hidden"><RotateCcw className="w-3 h-3" /></button>}
 
              {/* History Dropdown */}
              <div className="relative hidden">
@@ -1519,19 +1522,19 @@ function App() {
              </div>
 
              {!isLearningMode && (
-               <button onClick={() => setShowSnippetLibrary(!showSnippetLibrary)} className={`hidden flex items-center space-x-2 px-3 py-1.5 rounded-sm text-xs transition-all duration-200 border border-hgi-border uppercase font-bold tracking-wider ${showSnippetLibrary ? 'bg-hgi-card text-hgi-orange border-hgi-orange shadow-[0_0_10px_rgba(255,79,0,0.2)]' : 'bg-hgi-dark text-hgi-muted hover:text-hgi-text hover:bg-hgi-card'} hidden 2xl:flex`}><Layout className="w-3 h-3" /></button>
+               <button onClick={() => setShowSnippetLibrary(!showSnippetLibrary)} className="hidden"><Layout className="w-3 h-3" /></button>
             )}
 
              {/* Git & Publish Actions */}
              {!isLearningMode && (
-            <div className="hidden flex bg-hgi-card p-1 rounded-sm border border-hgi-border space-x-1 hidden 2xl:flex">
+            <div className="hidden">
                <button onClick={() => setShowGitModal(true)} disabled={!currentArtifact.code} className={`p-1.5 rounded-sm transition-all duration-200 ${currentArtifact.code ? 'text-hgi-text hover:bg-hgi-dark hover:text-hgi-orange' : 'text-hgi-muted opacity-50 cursor-not-allowed'}`} title="Exportar a Git"><Github className="w-4 h-4" /></button>
                <div className="w-px h-full bg-hgi-border/50"></div>
                <button onClick={() => setShowPublishModal(true)} disabled={!currentArtifact.code} className={`p-1.5 rounded-sm transition-all duration-200 ${currentArtifact.code ? 'text-hgi-text hover:bg-hgi-dark hover:text-hgi-orange' : 'text-hgi-muted opacity-50 cursor-not-allowed'}`} title="Publicar App"><Rocket className="w-4 h-4" /></button>
             </div>
             )}
 
-             <button onClick={handleDownload} className="hidden flex items-center space-x-2 px-3 py-1.5 bg-hgi-card rounded-sm text-xs text-hgi-text transition-all duration-200 border border-hgi-border uppercase font-bold tracking-wider hover:border-hgi-orange hover:text-hgi-orange hover:shadow-[0_0_10px_rgba(255,79,0,0.2)] hidden 2xl:flex"><Download className="w-3 h-3" /></button>
+             <button onClick={handleDownload} className="hidden"><Download className="w-3 h-3" /></button>
           </div>
         </div>
 
