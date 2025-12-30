@@ -1144,7 +1144,7 @@ function App() {
         <div className="absolute inset-0 pointer-events-none bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5"></div>
         
         {/* Toolbar */}
-        <div className="h-14 border-b border-hgi-border bg-hgi-dark flex items-center justify-between gap-2 px-4 z-10 min-w-0 overflow-x-hidden">
+        <div className="min-h-14 h-auto py-2 border-b border-hgi-border bg-hgi-dark flex items-center justify-between gap-2 px-4 z-10 min-w-0 flex-wrap overflow-visible">
           
           <div className="flex items-center space-x-4 min-w-0 flex-1">
              {/* Title Input */}
@@ -1188,7 +1188,7 @@ function App() {
                  <MoreHorizontal className="w-4 h-4" />
                </button>
                {showToolbarMenu && (
-                 <div className="absolute top-full right-0 mt-2 w-72 bg-hgi-card border border-hgi-border rounded-sm shadow-xl z-50 overflow-hidden">
+                 <div className="absolute top-full right-0 mt-2 w-72 bg-hgi-card border border-hgi-border rounded-sm shadow-xl z-[9999] overflow-hidden">
                    <div className="p-2 border-b border-hgi-border text-[10px] text-hgi-muted font-mono uppercase">Acciones</div>
                    <div className="p-2 space-y-1">
                      {!isLearningMode && (
