@@ -358,6 +358,9 @@ function App() {
         setMobileSelectedProjectId(null);
         setMobileView('gallery');
         lastPersistedMessageId.current = null;
+        setHasSavedState(false);
+        setLastSavedTime(null);
+        resetWorkspaceForProject('Untitled App');
         return;
       }
 
@@ -593,6 +596,18 @@ function App() {
     try {
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
+      setSession(null);
+      setShowToolbarMenu(false);
+      setShowProjectMenu(false);
+      setDbProjectId(null);
+      setDbSessionId(null);
+      setDbProjects([]);
+      setMobileSelectedProjectId(null);
+      setMobileView('gallery');
+      lastPersistedMessageId.current = null;
+      setHasSavedState(false);
+      setLastSavedTime(null);
+      resetWorkspaceForProject('Untitled App');
     } catch (e: any) {
       setAuthError(e?.message || 'Sign out failed');
     } finally {
@@ -1321,9 +1336,9 @@ function App() {
                  <MoreHorizontal className="w-4 h-4" />
                </button>
                {showToolbarMenu && (
-                 <div className="absolute top-full right-0 mt-2 w-72 bg-hgi-card border border-hgi-border rounded-sm shadow-xl z-[9999] overflow-hidden">
-                   <div className="p-2 border-b border-hgi-border text-[10px] text-hgi-muted font-mono uppercase">Acciones</div>
-                   <div className="p-2 space-y-1">
+                <div className="absolute top-full right-0 mt-2 w-72 bg-hgi-card border border-hgi-border rounded-sm shadow-xl z-[9999] overflow-hidden">
+                  <div className="p-2 border-b border-hgi-border text-[10px] text-hgi-muted font-mono uppercase">Acciones</div>
+                  <div className="p-2 space-y-1">
                     <button
                       onClick={() => {
                         setShowToolbarMenu(false);
@@ -1485,56 +1500,58 @@ function App() {
                        <span className="text-xs font-mono uppercase tracking-wider text-hgi-text">Descargar</span>
                        <Download className="w-4 h-4 text-hgi-muted" />
                      </button>
-                   </div>
-                 </div>
-               )}
-             </div>
 
-             <button onClick={handleSignOut} className="text-xs font-mono px-2 py-1 rounded-sm border transition-all flex items-center space-x-2 bg-hgi-card text-hgi-text border-hgi-border hover:border-hgi-orange hover:text-hgi-orange max-w-[220px] min-w-0">
-               <span className="truncate min-w-0 hidden xl:inline">{session.user.email}</span>
-               <span className="text-hgi-muted hidden xl:inline">/</span>
-               <span>Salir</span>
-             </button>
-             {/* Live Share */}
-             <button onClick={startCollaboration} disabled={collabRole === 'guest'} className="hidden">
-                {isCollaborating ? <><Users className="w-3 h-3 animate-pulse" /><span>Live ({peerCount})</span></> : <><Share2 className="w-3 h-3" /><span className="hidden sm:inline">Share</span></>}
-             </button>
-
-             {lastSavedTime && <span className="hidden text-xs text-hgi-muted font-mono hidden xl:block">Guardado: {lastSavedTime}</span>}
-             {hasSavedState && <button onClick={handleRestore} disabled={collabRole === 'guest'} className="hidden"><RotateCcw className="w-3 h-3" /></button>}
-
-             {/* History Dropdown */}
-             <div className="relative hidden">
-                <button onClick={() => history.length > 0 && setShowHistoryDropdown(!showHistoryDropdown)} className={`text-xs font-mono px-2 py-1 rounded-sm border transition-all flex items-center space-x-2 ${history.length > 0 ? 'bg-hgi-card text-hgi-text border-hgi-border hover:border-hgi-orange cursor-pointer' : 'bg-hgi-card/50 text-hgi-muted border-hgi-border cursor-default'}`}><History className="w-3 h-3" /><span>v{currentArtifact.version}</span></button>
-                {showHistoryDropdown && history.length > 0 && (
-                  <div className="absolute top-full right-0 mt-2 w-64 bg-hgi-card border border-hgi-border rounded-sm shadow-xl z-50 overflow-hidden">
-                    <div className="p-2 border-b border-hgi-border text-[10px] text-hgi-muted font-mono uppercase">Versiones Anteriores</div>
-                    <div className="max-h-60 overflow-y-auto">
-                      {[...history].reverse().map((histItem, idx) => (
-                        <button key={idx} onClick={() => handleRestoreVersion(histItem)} className="w-full text-left p-3 hover:bg-hgi-dark transition-colors border-b border-hgi-border/50 last:border-0 group">
-                          <div className="flex items-center justify-between mb-1"><span className="font-bold text-xs text-hgi-orange font-mono">v{histItem.version}</span><span className="text-[10px] text-hgi-muted flex items-center space-x-1"><Clock className="w-2.5 h-2.5" /><span>{histItem.timestamp ? new Date(histItem.timestamp).toLocaleTimeString() : ''}</span></span></div>
-                          <div className="text-xs text-hgi-muted truncate group-hover:text-hgi-text">{histItem.title}</div>
-                        </button>
-                      ))}
-                    </div>
                   </div>
-                )}
-             </div>
-
-             {!isLearningMode && (
-               <button onClick={() => setShowSnippetLibrary(!showSnippetLibrary)} className="hidden"><Layout className="w-3 h-3" /></button>
-            )}
-
-             {/* Git & Publish Actions */}
-             {!isLearningMode && (
-            <div className="hidden">
-               <button onClick={() => setShowGitModal(true)} disabled={!currentArtifact.code} className={`p-1.5 rounded-sm transition-all duration-200 ${currentArtifact.code ? 'text-hgi-text hover:bg-hgi-dark hover:text-hgi-orange' : 'text-hgi-muted opacity-50 cursor-not-allowed'}`} title="Exportar a Git"><Github className="w-4 h-4" /></button>
-               <div className="w-px h-full bg-hgi-border/50"></div>
-               <button onClick={() => setShowPublishModal(true)} disabled={!currentArtifact.code} className={`p-1.5 rounded-sm transition-all duration-200 ${currentArtifact.code ? 'text-hgi-text hover:bg-hgi-dark hover:text-hgi-orange' : 'text-hgi-muted opacity-50 cursor-not-allowed'}`} title="Publicar App"><Rocket className="w-4 h-4" /></button>
+                </div>
+              )}
             </div>
+
+            <button type="button" onClick={handleSignOut} className="text-xs font-mono px-2 py-1 rounded-sm border transition-all flex items-center space-x-2 bg-hgi-card text-hgi-text border-hgi-border hover:border-hgi-orange hover:text-hgi-orange max-w-[220px] min-w-0">
+              <span className="truncate min-w-0 hidden xl:inline">{session.user.email}</span>
+              <span className="text-hgi-muted hidden xl:inline">/</span>
+              <span>Salir</span>
+            </button>
+
+            {/* Live Share */}
+            <button onClick={startCollaboration} disabled={collabRole === 'guest'} className="hidden">
+              {isCollaborating ? <><Users className="w-3 h-3 animate-pulse" /><span>Live ({peerCount})</span></> : <><Share2 className="w-3 h-3" /><span className="hidden sm:inline">Share</span></>}
+            </button>
+
+            {lastSavedTime && <span className="hidden text-xs text-hgi-muted font-mono hidden xl:block">Guardado: {lastSavedTime}</span>}
+            {hasSavedState && <button onClick={handleRestore} disabled={collabRole === 'guest'} className="hidden"><RotateCcw className="w-3 h-3" /></button>}
+
+            {/* History Dropdown */}
+            <div className="relative hidden">
+              <button onClick={() => history.length > 0 && setShowHistoryDropdown(!showHistoryDropdown)} className={`text-xs font-mono px-2 py-1 rounded-sm border transition-all flex items-center space-x-2 ${history.length > 0 ? 'bg-hgi-card text-hgi-text border-hgi-border hover:border-hgi-orange cursor-pointer' : 'bg-hgi-card/50 text-hgi-muted border-hgi-border cursor-default'}`}><History className="w-3 h-3" /><span>v{currentArtifact.version}</span></button>
+              {showHistoryDropdown && history.length > 0 && (
+                <div className="absolute top-full right-0 mt-2 w-64 bg-hgi-card border border-hgi-border rounded-sm shadow-xl z-50 overflow-hidden">
+                  <div className="p-2 border-b border-hgi-border text-[10px] text-hgi-muted font-mono uppercase">Versiones Anteriores</div>
+                  <div className="max-h-60 overflow-y-auto">
+                    {[...history].reverse().map((histItem, idx) => (
+                      <button key={idx} onClick={() => handleRestoreVersion(histItem)} className="w-full text-left p-3 hover:bg-hgi-dark transition-colors border-b border-hgi-border/50 last:border-0 group">
+                        <div className="flex items-center justify-between mb-1"><span className="font-bold text-xs text-hgi-orange font-mono">v{histItem.version}</span><span className="text-[10px] text-hgi-muted flex items-center space-x-1"><Clock className="w-2.5 h-2.5" /><span>{histItem.timestamp ? new Date(histItem.timestamp).toLocaleTimeString() : ''}</span></span></div>
+                        <div className="text-xs text-hgi-muted truncate group-hover:text-hgi-text">{histItem.title}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {!isLearningMode && (
+              <button onClick={() => setShowSnippetLibrary(!showSnippetLibrary)} className="hidden"><Layout className="w-3 h-3" /></button>
             )}
 
-             <button onClick={handleDownload} className="hidden"><Download className="w-3 h-3" /></button>
+            {/* Git & Publish Actions */}
+            {!isLearningMode && (
+              <div className="hidden">
+                <button onClick={() => setShowGitModal(true)} disabled={!currentArtifact.code} className={`p-1.5 rounded-sm transition-all duration-200 ${currentArtifact.code ? 'text-hgi-text hover:bg-hgi-dark hover:text-hgi-orange' : 'text-hgi-muted opacity-50 cursor-not-allowed'}`} title="Exportar a Git"><Github className="w-4 h-4" /></button>
+                <div className="w-px h-full bg-hgi-border/50"></div>
+                <button onClick={() => setShowPublishModal(true)} disabled={!currentArtifact.code} className={`p-1.5 rounded-sm transition-all duration-200 ${currentArtifact.code ? 'text-hgi-text hover:bg-hgi-dark hover:text-hgi-orange' : 'text-hgi-muted opacity-50 cursor-not-allowed'}`} title="Publicar App"><Rocket className="w-4 h-4" /></button>
+              </div>
+            )}
+
+            <button onClick={handleDownload} className="hidden"><Download className="w-3 h-3" /></button>
           </div>
         </div>
 
