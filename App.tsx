@@ -32,6 +32,9 @@ function App() {
   const [authPassword, setAuthPassword] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ id: number; type: 'success' | 'error' | 'info'; message: string } | null>(null);
+  const [showMobileApiKeyPrompt, setShowMobileApiKeyPrompt] = useState(false);
+  const [mobileApiKeyDraft, setMobileApiKeyDraft] = useState('');
+  const [rememberMobileApiKey, setRememberMobileApiKey] = useState(true);
   const [dbProjectId, setDbProjectId] = useState<string | null>(null);
   const [dbSessionId, setDbSessionId] = useState<string | null>(null);
   const [dbLoading, setDbLoading] = useState(false);
@@ -119,6 +122,17 @@ function App() {
     window.setTimeout(() => {
       setToast((prev) => (prev?.id === id ? null : prev));
     }, 3200);
+  };
+
+  const getLiveApiKey = () => {
+    const sessionKey = storageService.getSessionSecret('live_api_key');
+    if (sessionKey) return sessionKey;
+    try {
+      const persisted = localStorage.getItem('hgi_live_api_key');
+      return persisted || null;
+    } catch {
+      return null;
+    }
   };
 
   const ensureMobileArchitectExplainMessage = (projectId: string | null) => {
@@ -336,7 +350,7 @@ function App() {
     resetWorkspaceForProject(nextTitle);
     setMobileSelectedProjectId(projectId);
     await loadProjectIntoState(session.user.id, projectId, nextTitle);
-    if (isMobile) setMobileView('chat');
+    if (isMobile) setMobileView('preview');
   };
 
   const handleCreateNewProject = async () => {
@@ -368,8 +382,7 @@ function App() {
       await loadProjectIntoState(ownerId, createdProject.id, createdProject.title || 'Untitled App');
       if (isMobile) {
         setMobileSelectedProjectId(createdProject.id);
-        ensureMobileArchitectExplainMessage(createdProject.id);
-        setMobileView('chat');
+        setMobileView('preview');
       }
     } catch (e) {
       console.error('Failed to create project', e);
@@ -668,8 +681,15 @@ function App() {
     }
   }, [currentArtifact, messages, isLiveActive]);
 
+  useEffect(() => {
+    if (!isMobile) return;
+    if (!isLiveActive && mobileView === 'chat') {
+      setMobileView('preview');
+    }
+  }, [isMobile, isLiveActive, mobileView]);
+
   const startLiveWithCurrentContext = async () => {
-    const liveApiKey = storageService.getSessionSecret('live_api_key') || undefined;
+    const liveApiKey = getLiveApiKey() || undefined;
     await liveSessionInstance.start(
       {
         onOpen: () => {
@@ -677,16 +697,22 @@ function App() {
           setLiveContextStale(false);
           const lastMsgId = messages.length > 0 ? messages[messages.length - 1].id : 'none';
           liveContextFingerprint.current = `${currentArtifact.title}|${currentArtifact.version}|${currentArtifact.code.length}|${lastMsgId}`;
+          if (isMobile) {
+            ensureMobileArchitectExplainMessage(mobileSelectedProjectId);
+            setMobileView('chat');
+          }
         },
         onClose: () => {
           setIsLiveActive(false);
           setLiveContextStale(false);
           liveContextFingerprint.current = null;
+          if (isMobile) setMobileView('preview');
         },
         onError: () => {
           setIsLiveActive(false);
           setLiveContextStale(false);
           liveContextFingerprint.current = null;
+          if (isMobile) setMobileView('preview');
         },
         onTranscription: (userText, modelText) => {
           setMessages((prev) => {
@@ -1117,22 +1143,6 @@ function App() {
     }
   };
 
-  const toggleLiveSession = async () => {
-    if (isLiveActive) {
-      liveSessionInstance.stop();
-      setIsLiveActive(false);
-      setLiveContextStale(false);
-      liveContextFingerprint.current = null;
-    } else {
-      try {
-        await startLiveWithCurrentContext();
-      } catch (e) {
-        console.error("Failed to start live session", e);
-        alert("Se requiere acceso al micrófono para el debate en vivo.");
-      }
-    }
-  };
-
   const handleRefreshLiveContext = async () => {
     if (!isLiveActive) return;
     try {
@@ -1144,6 +1154,44 @@ function App() {
     } catch (e) {
       console.error('Failed to refresh live context', e);
     }
+  };
+
+  const toggleLiveSession = async () => {
+    if (isLiveActive) {
+      liveSessionInstance.stop();
+      setIsLiveActive(false);
+      setLiveContextStale(false);
+      liveContextFingerprint.current = null;
+      if (isMobile) setMobileView('preview');
+      return;
+    }
+
+    const liveKey = getLiveApiKey();
+    if (!liveKey) {
+      if (isMobile) {
+        setShowMobileApiKeyPrompt(true);
+      }
+      showToast('error', 'API Key missing');
+      return;
+    }
+
+    await startLiveWithCurrentContext();
+  };
+
+  const handleSaveMobileApiKey = () => {
+    const key = mobileApiKeyDraft.trim();
+    if (!key) return;
+    storageService.setSessionSecret('live_api_key', key);
+    if (rememberMobileApiKey) {
+      try {
+        localStorage.setItem('hgi_live_api_key', key);
+      } catch {
+        // ignore
+      }
+    }
+    setShowMobileApiKeyPrompt(false);
+    setMobileApiKeyDraft('');
+    showToast('success', 'API Key guardada');
   };
 
   const handleDownload = () => {
@@ -1395,12 +1443,7 @@ function App() {
               <button
                 onClick={() => {
                   if (!mobileSelectedProjectId) return;
-                  if (mobileView === 'preview') {
-                    setMobileView('chat');
-                  } else {
-                    ensureMobileArchitectExplainMessage(mobileSelectedProjectId);
-                    setMobileView('preview');
-                  }
+                  setMobileView('preview');
                 }}
                 disabled={!mobileSelectedProjectId}
                 className="flex items-center space-x-2 px-3 py-1 rounded-sm text-xs font-bold uppercase tracking-wider transition-all duration-200 border bg-hgi-card border-hgi-border text-hgi-text hover:border-hgi-orange disabled:opacity-50"
@@ -1791,8 +1834,7 @@ function App() {
                           if (!session) return;
                           setMobileSelectedProjectId(p.id);
                           await loadProjectIntoState(session.user.id, p.id);
-                          ensureMobileArchitectExplainMessage(p.id);
-                          setMobileView('chat');
+                          setMobileView('preview');
                         }}
                         className={`w-full text-left p-3 rounded-sm border transition-all ${mobileSelectedProjectId === p.id ? 'bg-hgi-card border-hgi-orange' : 'bg-hgi-dark border-hgi-border hover:border-hgi-orange/50'}`}
                       >
@@ -1896,6 +1938,58 @@ function App() {
             }`}
           >
             {toast.message}
+          </div>
+        </div>
+      )}
+
+      {isMobile && showMobileApiKeyPrompt && (
+        <div className="fixed inset-0 z-[99998] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md bg-hgi-card border border-hgi-border rounded-sm shadow-2xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-xs font-mono uppercase tracking-wider text-hgi-text">Configurar API Key</div>
+              <button
+                type="button"
+                onClick={() => setShowMobileApiKeyPrompt(false)}
+                className="p-1 text-hgi-muted hover:text-hgi-orange transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="text-xs text-hgi-muted mb-3">
+              Pega tu API key para habilitar el modo micrófono (Arquitecto). Puedes guardarla en este dispositivo.
+            </div>
+            <input
+              value={mobileApiKeyDraft}
+              onChange={(e) => setMobileApiKeyDraft(e.target.value)}
+              className="w-full bg-hgi-dark border border-hgi-border rounded-sm px-3 py-2 text-hgi-text font-mono text-xs outline-none focus:ring-1 focus:ring-hgi-orange focus:border-hgi-orange"
+              placeholder="API key..."
+              type="password"
+            />
+            <label className="mt-3 flex items-center space-x-2 text-xs text-hgi-muted">
+              <input
+                type="checkbox"
+                checked={rememberMobileApiKey}
+                onChange={(e) => setRememberMobileApiKey(e.target.checked)}
+              />
+              <span>Guardar en este dispositivo</span>
+            </label>
+            <div className="mt-4 flex items-center justify-end space-x-2">
+              <button
+                type="button"
+                onClick={() => setShowMobileApiKeyPrompt(false)}
+                className="px-3 py-2 rounded-sm border border-hgi-border bg-hgi-dark text-hgi-text text-xs font-mono uppercase tracking-wider hover:border-hgi-orange"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveMobileApiKey}
+                disabled={!mobileApiKeyDraft.trim()}
+                className="px-3 py-2 rounded-sm border border-hgi-orange bg-hgi-orange text-black text-xs font-mono uppercase tracking-wider disabled:opacity-50"
+              >
+                Guardar
+              </button>
+            </div>
           </div>
         </div>
       )}
