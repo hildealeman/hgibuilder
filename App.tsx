@@ -1075,8 +1075,8 @@ function App() {
       <div className="flex h-screen bg-hgi-dark text-hgi-text font-sans overflow-hidden items-center justify-center p-6">
         <div className="w-full max-w-md bg-hgi-card border border-hgi-border rounded-sm shadow-2xl p-6">
           <div className="flex items-center space-x-3 mb-6">
-            <div className="w-10 h-10 bg-hgi-orange rounded-sm flex items-center justify-center shadow-[0_0_15px_rgba(255,79,0,0.4)]">
-              <img src="/hgihub-logo.png" alt="HGIHub" className="w-7 h-7 object-contain" />
+            <div className="w-10 h-10 flex items-center justify-center">
+              <img src="/hgihub-logo.png" alt="HGIHub" className="w-10 h-10 object-contain" />
             </div>
             <div>
               <div className="font-bold text-lg tracking-tight uppercase font-mono">Vibe Builder</div>
@@ -1151,8 +1151,8 @@ function App() {
         {/* Header */}
         <div className="p-4 border-b border-hgi-border flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 bg-hgi-orange rounded-sm flex items-center justify-center shadow-[0_0_15px_rgba(255,79,0,0.4)]">
-                <img src="/hgihub-logo.png" alt="HGIHub" className="w-5 h-5 object-contain" />
+            <div className="w-8 h-8 flex items-center justify-center">
+                <img src="/hgihub-logo.png" alt="HGIHub" className="w-8 h-8 object-contain" />
             </div>
             <h1 className="font-bold text-lg tracking-tight uppercase font-mono hidden sm:block">Vibe Builder</h1>
             
