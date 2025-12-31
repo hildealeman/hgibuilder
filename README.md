@@ -2,19 +2,65 @@
 <img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
 </div>
 
-# Run and deploy your AI Studio app
+# HGI Vibe Builder
 
-This contains everything you need to run your app locally.
+Hecho en Mexico por ingenio 100% Mexicano, VistaDev Mexico. vistadev.mx
 
-View your app in AI Studio: https://ai.studio/apps/drive/1NFYlPf92fvFyzbUFXqy-LtftO_vXCEM9
+Aplicación web (React + Vite) con autenticación y persistencia en Supabase, y generación de código vía API.
 
-## Run Locally
+## Requisitos
 
-**Prerequisites:**  Node.js
+- Node.js (recomendado LTS)
+- Una cuenta/proyecto de Supabase
+- Una API Key para el endpoint de generación (`GEMINI_API_KEY`)
 
+## Instalación
 
-1. Install dependencies:
+1. Instala dependencias:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+
+2. Crea un archivo `.env.local` en la raíz del proyecto.
+
+## Variables de entorno
+
+### Frontend (Vite)
+
+Estas variables se leen desde `import.meta.env`:
+
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+
+### API (server)
+
+Esta variable se lee desde `process.env` (ver `api/generate.ts`):
+
+- `GEMINI_API_KEY`
+
+Ejemplo de `.env.local`:
+
+```bash
+VITE_SUPABASE_URL=https://xxxx.supabase.co
+VITE_SUPABASE_ANON_KEY=eyJ...
+GEMINI_API_KEY=YOUR_API_KEY
+```
+
+## Configuración de Supabase
+
+1. Crea un proyecto en Supabase.
+2. Activa Auth por email/password y crea usuarios desde el dashboard (la app está en modo **solo login**).
+3. Asegúrate de tener estas tablas (según el código):
+   - `hgibuilder_projects`
+   - `hgibuilder_sessions`
+   - `hgibuilder_messages`
+
+## Ejecutar en local
+
+`npm run dev`
+
+Luego abre la URL que imprime Vite (por defecto `http://localhost:5173`).
+
+## Build de producción
+
+`npm run build`
+
+`npm run preview`
