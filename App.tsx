@@ -5,7 +5,7 @@ import {
   Monitor, Activity, RotateCcw, Save, Pencil,
   ArrowDownToLine, MessageSquare, History, Clock,
   ShieldCheck, Palette, Github, HelpCircle, Settings,
-  Undo2, Redo2, Layout, X, Paperclip, Share2, Users, Link as LinkIcon, Rocket, MoreHorizontal, Folder, ChevronDown
+  Undo2, Redo2, Layout, X, Paperclip, Share2, Users, Link as LinkIcon, Rocket, MoreHorizontal, Folder, ChevronDown, Trash2
 } from 'lucide-react';
 import { generateAppCode, generateImage, validateCodeEthics } from './services/geminiService';
 import { liveSessionInstance } from './services/liveApiService';
@@ -31,6 +31,7 @@ function App() {
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ id: number; type: 'success' | 'error' | 'info'; message: string } | null>(null);
   const [dbProjectId, setDbProjectId] = useState<string | null>(null);
   const [dbSessionId, setDbSessionId] = useState<string | null>(null);
   const [dbLoading, setDbLoading] = useState(false);
@@ -110,6 +111,14 @@ function App() {
   const liveContextFingerprint = useRef<string | null>(null);
   const toolbarMenuRef = useRef<HTMLDivElement>(null);
   const projectMenuRef = useRef<HTMLDivElement>(null);
+
+  const showToast = (type: 'success' | 'error' | 'info', message: string) => {
+    const id = Date.now();
+    setToast({ id, type, message });
+    window.setTimeout(() => {
+      setToast((prev) => (prev?.id === id ? null : prev));
+    }, 3200);
+  };
 
   const resetWorkspaceForProject = (title: string) => {
     setInput('');
@@ -456,43 +465,46 @@ function App() {
   }, [messages, session, dbSessionId, collabRole]);
 
   useEffect(() => {
-    const persistArtifact = async () => {
+    const persistArtifactNow = async () => {
       if (!session || !dbSessionId || !dbProjectId) return;
       if (collabRole === 'guest') return;
       if (!currentArtifact.id || currentArtifact.id === 'init') return;
 
-      try {
-        const now = new Date().toISOString();
-        const { error: sessErr } = await supabase
-          .from('hgibuilder_sessions')
-          .update({
-            current_artifact_title: currentArtifact.title,
-            current_artifact_version: currentArtifact.version,
-            current_artifact_code: currentArtifact.code,
-            updated_at: now,
-          })
-          .eq('id', dbSessionId);
+      const now = new Date().toISOString();
+      const { error: sessErr } = await supabase
+        .from('hgibuilder_sessions')
+        .update({
+          current_artifact_title: currentArtifact.title,
+          current_artifact_version: currentArtifact.version,
+          current_artifact_code: currentArtifact.code,
+          updated_at: now,
+        })
+        .eq('id', dbSessionId);
 
-        if (sessErr) throw sessErr;
+      if (sessErr) throw sessErr;
 
-        const { error: projErr } = await supabase
-          .from('hgibuilder_projects')
-          .update({ title: currentArtifact.title, updated_at: now })
-          .eq('id', dbProjectId);
+      const { error: projErr } = await supabase
+        .from('hgibuilder_projects')
+        .update({ title: currentArtifact.title, updated_at: now })
+        .eq('id', dbProjectId);
 
-        if (projErr) throw projErr;
-        setHasSavedState(true);
-        setLastSavedTime(new Date().toLocaleTimeString());
-      } catch (e) {
-        console.error('Failed to persist artifact', e);
-      }
+      if (projErr) throw projErr;
+      setHasSavedState(true);
+      setLastSavedTime(new Date().toLocaleTimeString());
+      setDbProjects((prev) =>
+        prev.map((p) => (p.id === dbProjectId ? { ...p, title: currentArtifact.title, updated_at: now } : p))
+      );
     };
 
     if (artifactSaveTimer.current) {
       window.clearTimeout(artifactSaveTimer.current);
     }
 
-    artifactSaveTimer.current = window.setTimeout(persistArtifact, 1200);
+    artifactSaveTimer.current = window.setTimeout(() => {
+      persistArtifactNow().catch((e) => {
+        console.error('Failed to persist artifact', e);
+      });
+    }, 1200);
 
     return () => {
       if (artifactSaveTimer.current) {
@@ -500,6 +512,131 @@ function App() {
       }
     };
   }, [currentArtifact, session, dbSessionId, dbProjectId, collabRole]);
+
+  const handleSaveProgress = async () => {
+    if (!session || !dbSessionId || !dbProjectId) {
+      showToast('error', 'No hay proyecto activo para guardar');
+      return;
+    }
+    if (collabRole === 'guest') return;
+    try {
+      const now = new Date().toISOString();
+      const { error: sessErr } = await supabase
+        .from('hgibuilder_sessions')
+        .update({
+          current_artifact_title: currentArtifact.title,
+          current_artifact_version: currentArtifact.version,
+          current_artifact_code: currentArtifact.code,
+          updated_at: now,
+        })
+        .eq('id', dbSessionId);
+      if (sessErr) throw sessErr;
+
+      const { error: projErr } = await supabase
+        .from('hgibuilder_projects')
+        .update({ title: currentArtifact.title, updated_at: now })
+        .eq('id', dbProjectId);
+      if (projErr) throw projErr;
+
+      setHasSavedState(true);
+      setLastSavedTime(new Date().toLocaleTimeString());
+      setDbProjects((prev) =>
+        prev.map((p) => (p.id === dbProjectId ? { ...p, title: currentArtifact.title, updated_at: now } : p))
+      );
+      showToast('success', 'Progreso guardado');
+    } catch (e: any) {
+      console.error('Manual save failed', e);
+      showToast('error', e?.message || 'Error guardando');
+    }
+  };
+
+  const handleSaveProjectName = async () => {
+    if (!session || !dbProjectId) {
+      showToast('error', 'No hay proyecto activo');
+      return;
+    }
+    if (collabRole === 'guest') return;
+    try {
+      const now = new Date().toISOString();
+      const { error } = await supabase
+        .from('hgibuilder_projects')
+        .update({ title: currentArtifact.title, updated_at: now })
+        .eq('id', dbProjectId);
+      if (error) throw error;
+      setDbProjects((prev) =>
+        prev.map((p) => (p.id === dbProjectId ? { ...p, title: currentArtifact.title, updated_at: now } : p))
+      );
+      showToast('success', 'Nombre guardado');
+    } catch (e: any) {
+      console.error('Failed to save project name', e);
+      showToast('error', e?.message || 'Error guardando nombre');
+    }
+  };
+
+  const handleDeleteProject = async () => {
+    if (!session || !dbProjectId) {
+      showToast('error', 'No hay proyecto activo');
+      return;
+    }
+    if (collabRole === 'guest') return;
+    const ok = window.confirm('¿Eliminar este proyecto? Esta acción no se puede deshacer.');
+    if (!ok) return;
+
+    try {
+      const ownerId = session.user.id;
+      const projectId = dbProjectId;
+
+      const { data: sessionsForProject, error: sessionsErr } = await supabase
+        .from('hgibuilder_sessions')
+        .select('id')
+        .eq('owner_id', ownerId)
+        .eq('project_id', projectId);
+      if (sessionsErr) throw sessionsErr;
+
+      const sessionIds = (sessionsForProject || []).map((s: any) => s.id).filter(Boolean);
+      if (sessionIds.length > 0) {
+        const { error: msgDelErr } = await supabase
+          .from('hgibuilder_messages')
+          .delete()
+          .eq('owner_id', ownerId)
+          .in('session_id', sessionIds);
+        if (msgDelErr) throw msgDelErr;
+
+        const { error: sessDelErr } = await supabase
+          .from('hgibuilder_sessions')
+          .delete()
+          .eq('owner_id', ownerId)
+          .eq('project_id', projectId);
+        if (sessDelErr) throw sessDelErr;
+      }
+
+      const { error: projDelErr } = await supabase
+        .from('hgibuilder_projects')
+        .delete()
+        .eq('owner_id', ownerId)
+        .eq('id', projectId);
+      if (projDelErr) throw projDelErr;
+
+      const remaining = dbProjects.filter((p) => p.id !== projectId);
+      setDbProjects(remaining);
+      setShowProjectMenu(false);
+      showToast('success', 'Proyecto eliminado');
+
+      if (remaining.length > 0) {
+        const next = remaining[0];
+        resetWorkspaceForProject(next.title || 'Untitled App');
+        setMobileSelectedProjectId(next.id);
+        await loadProjectIntoState(ownerId, next.id, next.title);
+        if (isMobile) setMobileView('preview');
+      } else {
+        resetWorkspaceForProject('Untitled App');
+        await handleCreateNewProject();
+      }
+    } catch (e: any) {
+      console.error('Failed to delete project', e);
+      showToast('error', e?.message || 'Error eliminando proyecto');
+    }
+  };
 
   useEffect(() => {
     if (!isLiveActive) return;
@@ -1275,6 +1412,36 @@ function App() {
                        <span className="text-xs font-mono uppercase tracking-wider text-hgi-text">Nuevo Proyecto</span>
                        <Sparkles className="w-4 h-4 text-hgi-muted" />
                      </button>
+ 
+                     <div className="mt-2 pt-2 border-t border-hgi-border space-y-1">
+                       <button
+                         onClick={handleSaveProjectName}
+                         disabled={collabRole === 'guest' || !dbProjectId}
+                         className="w-full flex items-center justify-between p-2 rounded-sm hover:bg-hgi-dark transition-colors disabled:opacity-50"
+                         type="button"
+                       >
+                         <span className="text-xs font-mono uppercase tracking-wider text-hgi-text">Guardar Nombre</span>
+                         <Pencil className="w-4 h-4 text-hgi-muted" />
+                       </button>
+                       <button
+                         onClick={handleSaveProgress}
+                         disabled={collabRole === 'guest' || !dbProjectId || !dbSessionId}
+                         className="w-full flex items-center justify-between p-2 rounded-sm hover:bg-hgi-dark transition-colors disabled:opacity-50"
+                         type="button"
+                       >
+                         <span className="text-xs font-mono uppercase tracking-wider text-hgi-text">Guardar Progreso</span>
+                         <Save className="w-4 h-4 text-hgi-muted" />
+                       </button>
+                       <button
+                         onClick={handleDeleteProject}
+                         disabled={collabRole === 'guest' || !dbProjectId}
+                         className="w-full flex items-center justify-between p-2 rounded-sm hover:bg-hgi-dark transition-colors disabled:opacity-50 text-red-300 hover:text-red-200"
+                         type="button"
+                       >
+                         <span className="text-xs font-mono uppercase tracking-wider">Eliminar Proyecto</span>
+                         <Trash2 className="w-4 h-4" />
+                       </button>
+                     </div>
                    </div>
                  </div>
                )}
@@ -1638,6 +1805,22 @@ function App() {
       {showPublishModal && <PublishModal code={currentArtifact.code} projectTitle={currentArtifact.title} onClose={() => setShowPublishModal(false)} />}
       {showHelpModal && <HelpModal onClose={() => setShowHelpModal(false)} />}
       {showSettingsModal && <SettingsModal config={config} setConfig={setConfig} onClose={() => setShowSettingsModal(false)} />}
+
+      {toast && (
+        <div className="fixed bottom-4 right-4 z-[99999]">
+          <div
+            className={`px-4 py-3 rounded-sm border font-mono text-xs shadow-xl max-w-[320px] ${
+              toast.type === 'success'
+                ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-200'
+                : toast.type === 'error'
+                  ? 'bg-red-950/30 border-red-500/40 text-red-200'
+                  : 'bg-hgi-card border-hgi-border text-hgi-text'
+            }`}
+          >
+            {toast.message}
+          </div>
+        </div>
+      )}
       
       {/* Share Modal */}
       {showShareModal && (
