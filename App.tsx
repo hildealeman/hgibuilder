@@ -38,7 +38,7 @@ function App() {
   const [creatingProject, setCreatingProject] = useState(false);
   const [dbProjects, setDbProjects] = useState<Array<{ id: string; title: string; updated_at: string | null }>>([]);
   const [mobileSelectedProjectId, setMobileSelectedProjectId] = useState<string | null>(null);
-  const [mobileView, setMobileView] = useState<'gallery' | 'preview'>('gallery');
+  const [mobileView, setMobileView] = useState<'gallery' | 'chat' | 'preview'>('gallery');
   const [isLearningMode, setIsLearningMode] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [liveContextStale, setLiveContextStale] = useState(false);
@@ -111,6 +111,7 @@ function App() {
   const liveContextFingerprint = useRef<string | null>(null);
   const toolbarMenuRef = useRef<HTMLDivElement>(null);
   const projectMenuRef = useRef<HTMLDivElement>(null);
+  const mobileExplainedProjectId = useRef<string | null>(null);
 
   const showToast = (type: 'success' | 'error' | 'info', message: string) => {
     const id = Date.now();
@@ -118,6 +119,25 @@ function App() {
     window.setTimeout(() => {
       setToast((prev) => (prev?.id === id ? null : prev));
     }, 3200);
+  };
+
+  const ensureMobileArchitectExplainMessage = (projectId: string | null) => {
+    if (!projectId) return;
+    if (mobileExplainedProjectId.current === projectId) return;
+    mobileExplainedProjectId.current = projectId;
+    setMessages((prev) => {
+      const alreadyHas = prev.some((m) => m.id === `mobile_explain_${projectId}`);
+      if (alreadyHas) return prev;
+      return [
+        ...prev,
+        {
+          id: `mobile_explain_${projectId}`,
+          role: MessageRole.SYSTEM,
+          content:
+            'Modo móvil: aquí trabajas en formato chat. Yo (Arquitecto) te puedo explicar cómo se construyó esta app y por qué se tomaron ciertas decisiones. Usa el botón "Preview" para ver el resultado en vivo y vuelve al chat para iterar. Pregúntame: "Explícame cómo se escribió esta app" o "¿Qué hace este archivo?".',
+        },
+      ];
+    });
   };
 
   const resetWorkspaceForProject = (title: string) => {
@@ -316,7 +336,7 @@ function App() {
     resetWorkspaceForProject(nextTitle);
     setMobileSelectedProjectId(projectId);
     await loadProjectIntoState(session.user.id, projectId, nextTitle);
-    if (isMobile) setMobileView('preview');
+    if (isMobile) setMobileView('chat');
   };
 
   const handleCreateNewProject = async () => {
@@ -348,7 +368,8 @@ function App() {
       await loadProjectIntoState(ownerId, createdProject.id, createdProject.title || 'Untitled App');
       if (isMobile) {
         setMobileSelectedProjectId(createdProject.id);
-        setMobileView('preview');
+        ensureMobileArchitectExplainMessage(createdProject.id);
+        setMobileView('chat');
       }
     } catch (e) {
       console.error('Failed to create project', e);
@@ -1369,7 +1390,37 @@ function App() {
         
         {/* Toolbar */}
         <div className="h-12 border-b border-hgi-border bg-hgi-dark flex items-center justify-between gap-2 px-3 z-[50] min-w-0 overflow-visible">
+          {isMobile ? (
+            <div className="flex items-center justify-between w-full">
+              <button
+                onClick={() => {
+                  if (!mobileSelectedProjectId) return;
+                  if (mobileView === 'preview') {
+                    setMobileView('chat');
+                  } else {
+                    ensureMobileArchitectExplainMessage(mobileSelectedProjectId);
+                    setMobileView('preview');
+                  }
+                }}
+                disabled={!mobileSelectedProjectId}
+                className="flex items-center space-x-2 px-3 py-1 rounded-sm text-xs font-bold uppercase tracking-wider transition-all duration-200 border bg-hgi-card border-hgi-border text-hgi-text hover:border-hgi-orange disabled:opacity-50"
+                type="button"
+              >
+                <Play className="w-3 h-3" />
+                <span>Preview</span>
+              </button>
+
+              <button
+                onClick={toggleLiveSession}
+                className={`p-2 rounded-sm transition-all duration-200 border ${isLiveActive ? 'bg-cyan-600 border-cyan-500 text-white shadow-[0_0_15px_rgba(6,182,212,0.4)] hover:bg-cyan-500' : 'bg-hgi-card border-hgi-border text-hgi-muted hover:text-cyan-400 hover:border-cyan-400/50'}`}
+                type="button"
+              >
+                <Mic className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
           
+          <div className="flex items-center justify-between w-full">
           <div className="flex items-center space-x-4 min-w-0 flex-1">
              <div className="relative" ref={projectMenuRef}>
                <button
@@ -1713,6 +1764,8 @@ function App() {
 
             <button onClick={handleDownload} className="hidden"><Download className="w-3 h-3" /></button>
           </div>
+          </div>
+          )}
         </div>
 
         {/* Content Area */}
@@ -1738,7 +1791,8 @@ function App() {
                           if (!session) return;
                           setMobileSelectedProjectId(p.id);
                           await loadProjectIntoState(session.user.id, p.id);
-                          setMobileView('preview');
+                          ensureMobileArchitectExplainMessage(p.id);
+                          setMobileView('chat');
                         }}
                         className={`w-full text-left p-3 rounded-sm border transition-all ${mobileSelectedProjectId === p.id ? 'bg-hgi-card border-hgi-orange' : 'bg-hgi-dark border-hgi-border hover:border-hgi-orange/50'}`}
                       >
@@ -1750,24 +1804,48 @@ function App() {
                     ))}
                   </div>
                 </div>
+              ) : mobileView === 'preview' ? (
+                <div className="h-full flex flex-col">
+                  <div className="flex-1 overflow-hidden">
+                    <AppPreview code={currentArtifact.code} />
+                  </div>
+                </div>
               ) : (
                 <div className="h-full flex flex-col">
-                  <div className="flex items-center justify-between mb-4">
-                    <button
-                      onClick={() => setMobileView('gallery')}
-                      className="text-xs font-mono uppercase tracking-wider text-hgi-muted hover:text-hgi-orange transition-colors"
-                    >
-                      ← Proyectos
-                    </button>
-                    {dbLoading && (
+                  <div ref={chatContainerRef} className="flex-1 overflow-y-auto space-y-6">
+                    {messages.map(renderMessage)}
+                    {isGenerating && (
                       <div className="flex items-center space-x-2 text-hgi-orange animate-pulse px-2">
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                        <span className="text-[10px] font-mono uppercase">Cargando…</span>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span className="text-sm font-mono uppercase">HGI Procesando...</span>
                       </div>
                     )}
                   </div>
-                  <div className="flex-1 overflow-hidden">
-                    <AppPreview code={currentArtifact.code} />
+
+                  <div className="pt-4">
+                    {selectedImage && (
+                      <div className="mb-3 flex items-start animate-in slide-in-from-bottom-2 fade-in">
+                        <div className="relative group">
+                          <img src={selectedImage} alt="Input" className="h-16 w-16 object-cover rounded-sm border border-hgi-orange/50 shadow-md" />
+                          <button onClick={() => { setSelectedImage(null); if(fileInputRef.current) fileInputRef.current.value = ''; }} className="absolute -top-1.5 -right-1.5 bg-black text-hgi-orange border border-hgi-orange rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-hgi-orange hover:text-black"><X className="w-3 h-3" /></button>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex space-x-2">
+                      <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
+                      <button onClick={() => fileInputRef.current?.click()} className={`p-3 rounded-sm transition-all duration-200 border ${selectedImage ? 'bg-hgi-card border-hgi-orange text-hgi-orange' : 'bg-hgi-card border-hgi-border text-hgi-muted hover:text-hgi-text hover:border-hgi-text/50'}`} type="button"><Paperclip className="w-5 h-5" /></button>
+                      <textarea
+                        value={input}
+                        onChange={(e) => setInput(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); }}}
+                        placeholder={collabRole === 'guest' ? "Enviar prompt al Host..." : "Describe la aplicación..."}
+                        rows={input.split('\n').length > 1 ? 3 : 1}
+                        className="flex-1 bg-hgi-card border border-hgi-border rounded-sm px-4 py-3 text-hgi-text focus:ring-1 focus:ring-hgi-orange focus:border-hgi-orange outline-none placeholder-hgi-muted/50 font-mono text-sm transition-all duration-200 resize-none overflow-hidden"
+                        style={{ minHeight: '44px', maxHeight: '120px' }}
+                      />
+                      <button onClick={() => handleSendMessage()} disabled={isGenerating || (!input.trim() && !selectedImage)} className="p-3 bg-hgi-orange text-black rounded-sm disabled:opacity-50 transition-all duration-200 font-bold hover:bg-hgi-orangeBright hover:shadow-[0_0_15px_rgba(255,79,0,0.5)] active:scale-95 h-fit self-end" type="button"><Send className="w-5 h-5" /></button>
+                    </div>
                   </div>
                 </div>
               )}
