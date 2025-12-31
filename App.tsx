@@ -1490,6 +1490,15 @@ function App() {
               )}
             </div>
 
+            <a
+              href="https://hgihub.cloud"
+              target="_blank"
+              rel="noreferrer"
+              className="text-xs font-mono px-2 py-1 rounded-sm border transition-all flex items-center space-x-2 bg-hgi-card text-hgi-text border-hgi-border hover:border-hgi-orange hover:text-hgi-orange"
+            >
+              <span>HGIHub</span>
+            </a>
+
             <button type="button" onClick={handleSignOut} className="text-xs font-mono px-2 py-1 rounded-sm border transition-all flex items-center space-x-2 bg-hgi-card text-hgi-text border-hgi-border hover:border-hgi-orange hover:text-hgi-orange max-w-[220px] min-w-0">
               <span className="truncate min-w-0 hidden xl:inline">{session.user.email}</span>
               <span className="text-hgi-muted hidden xl:inline">/</span>
