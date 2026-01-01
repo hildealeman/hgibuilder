@@ -135,6 +135,39 @@ function App() {
     }
   };
 
+  const snapshotIdFor = (sessionId: string, version: number) => {
+    return `snapshot_${sessionId}_v${version}`;
+  };
+
+  const saveSnapshotForSession = async (sessionId: string, artifact: Artifact) => {
+    try {
+      await storageService.saveArtifact({
+        ...artifact,
+        id: snapshotIdFor(sessionId, artifact.version),
+      });
+    } catch (e) {
+      console.error('Failed to save version snapshot', e);
+    }
+  };
+
+  const loadSnapshotsForSession = async (sessionId: string, currentVersion?: number) => {
+    try {
+      const all = await storageService.getAllArtifacts();
+      const prefix = `snapshot_${sessionId}_v`;
+      const snaps = all
+        .filter((a) => typeof a.id === 'string' && a.id.startsWith(prefix))
+        .sort((a, b) => (a.version || 0) - (b.version || 0));
+
+      const filtered = typeof currentVersion === 'number'
+        ? snaps.filter((s) => (s.version || 0) < currentVersion)
+        : snaps;
+
+      setHistory(filtered);
+    } catch (e) {
+      console.error('Failed to load version snapshots', e);
+    }
+  };
+
   const ensureMobileArchitectExplainMessage = (projectId: string | null) => {
     if (!projectId) return;
     if (mobileExplainedProjectId.current === projectId) return;
@@ -291,20 +324,27 @@ function App() {
 
       if (loadedSessionErr) throw loadedSessionErr;
 
-      setCurrentArtifact((prev) => ({
-        ...prev,
-        id: sessionId,
-        title: loadedSession?.current_artifact_title || prev.title,
-        code:
-          typeof loadedSession?.current_artifact_code === 'string'
-            ? loadedSession.current_artifact_code
-            : prev.code,
-        version:
-          typeof loadedSession?.current_artifact_version === 'number'
-            ? loadedSession.current_artifact_version
-            : prev.version,
-        timestamp: Date.now(),
-      }));
+      if (loadedSession) {
+        setCurrentArtifact({
+          id: sessionId,
+          title: loadedSession.current_artifact_title || projectTitle || 'Untitled App',
+          code: loadedSession.current_artifact_code || '',
+          version: loadedSession.current_artifact_version || 0,
+          timestamp: Date.now(),
+        });
+
+        await loadSnapshotsForSession(sessionId, loadedSession.current_artifact_version || 0);
+      } else {
+        setCurrentArtifact({
+          id: sessionId,
+          title: projectTitle || 'Untitled App',
+          code: '',
+          version: 0,
+          timestamp: Date.now(),
+        });
+
+        await loadSnapshotsForSession(sessionId, 0);
+      }
 
       const { data: loadedMessages, error: messagesErr } = await supabase
         .from('hgibuilder_messages')
@@ -1007,6 +1047,10 @@ function App() {
     if (currentArtifact.id !== 'init') {
        saveToUndo(currentArtifact);
        setHistory(prev => [...prev, { ...currentArtifact, timestamp: Date.now() }]);
+
+       if (dbSessionId) {
+         void saveSnapshotForSession(dbSessionId, { ...currentArtifact, timestamp: Date.now() });
+       }
     }
     setCurrentArtifact(artifact);
     setShowHistoryDropdown(false);
@@ -1117,6 +1161,10 @@ function App() {
         if (currentArtifact.id !== 'init' && currentArtifact.code) {
            saveToUndo(currentArtifact);
            setHistory(prev => [...prev, { ...currentArtifact, timestamp: Date.now() }]);
+
+           if (dbSessionId) {
+             void saveSnapshotForSession(dbSessionId, { ...currentArtifact, timestamp: Date.now() });
+           }
         }
 
         const generatedCode = await generateAppCode(promptText, config, currentArtifact.code, imgToSend || undefined);
@@ -1128,6 +1176,10 @@ function App() {
           version: prev.version + 1,
           timestamp: Date.now()
         }));
+
+        if (dbSessionId && currentArtifact.id !== 'init') {
+          void loadSnapshotsForSession(dbSessionId, currentArtifact.version + 1);
+        }
 
         const aiMsg: Message = {
           id: Date.now().toString() + '_ai',
